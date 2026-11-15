@@ -2698,7 +2698,7 @@ const AppCurrentVersion = "3.0.0"
 // CheckAppUpdate checks for new versions on GitHub Releases
 func CheckAppUpdate(repo string) types.AppUpdateInfo {
 	if strings.TrimSpace(repo) == "" {
-		repo = "XZ-L1TE/remna-ui"
+		repo = "XZ-LITE/remna-ui"
 	}
 	repo = strings.TrimPrefix(repo, "https://github.com/")
 	repo = strings.Trim(repo, "/")

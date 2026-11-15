@@ -686,7 +686,7 @@ export function App() {
   const handleCheckAppUpdate = async () => {
     setCheckingUpdate(true);
     try {
-      const res = await CheckAppUpdate("XZ-L1TE/remna-ui");
+      const res = await CheckAppUpdate("XZ-LITE/remna-ui");
       setUpdateInfo(res);
       if (res.has_update) {
         addToast("info", `Доступна новая версия: ${res.latest_version}`);
@@ -7615,7 +7615,7 @@ export function App() {
                         type="button"
                         className="win-button"
                         style={{ height: "28px", fontSize: "11.5px" }}
-                        onClick={() => OpenBrowserURL("https://github.com/XZ-L1TE/remna-ui")}
+                        onClick={() => OpenBrowserURL("https://github.com/XZ-LITE/remna-ui")}
                       >
                         <ExternalLink size={12} />
                         <span>Открыть GitHub</span>

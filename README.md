@@ -80,7 +80,7 @@ remna-ui/
 
 1. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/XZ-L1TE/remna-ui.git
+   git clone https://github.com/XZ-LITE/remna-ui.git
    cd remna-ui
    ```
 
