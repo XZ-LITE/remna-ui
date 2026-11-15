@@ -2,44 +2,45 @@ package main
 
 import (
 	"embed"
+	"log"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	app := NewApp()
+	appService := NewApp()
 
-	err := wails.Run(&options.App{
-		Title:     "Remnawave Manager",
-		Width:     1120,
-		Height:    760,
-		MinWidth:  960,
-		MinHeight: 640,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+	app := application.New(application.Options{
+		Name:        "Remnawave Manager (Beta)",
+		Description: "Remnawave Deployment & Manager Suite",
+		Services: []application.Service{
+			application.NewService(appService),
 		},
-		BackgroundColour: &options.RGBA{R: 16, G: 20, B: 28, A: 1},
-		OnStartup:        app.startup,
-		Bind: []interface{}{
-			app,
-		},
-		Windows: &windows.Options{
-			WebviewIsTransparent:              true,
-			WindowIsTranslucent:               true,
-			BackdropType:                      windows.Mica,
-			DisableWindowIcon:                 false,
-			DisableFramelessWindowDecorations: false,
-			Theme:                             windows.Dark,
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
 		},
 	})
 
+	app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "Remnawave Manager (Wails v3 Beta)",
+		Width:            1120,
+		Height:           760,
+		MinWidth:         960,
+		MinHeight:        640,
+		BackgroundColour: application.NewRGB(16, 20, 28),
+		BackgroundType:   application.BackgroundTypeTranslucent,
+		URL:              "/",
+		Windows: application.WindowsWindow{
+			BackdropType: application.Mica,
+			Theme:        application.Dark,
+		},
+	})
+
+	err := app.Run()
 	if err != nil {
-		println("Error:", err.Error())
+		log.Fatal(err)
 	}
 }

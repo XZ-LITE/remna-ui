@@ -210,23 +210,18 @@ func isValidContainerName(name string) bool {
 
 
 func getStorePath() string {
-
 	appData := os.Getenv("APPDATA")
-
 	if appData == "" {
-
 		home, _ := os.UserHomeDir()
-
 		appData = filepath.Join(home, ".config")
-
 	}
-
-	dir := filepath.Join(appData, "remnawave")
-
+	subDir := os.Getenv("REMNAWAVE_DATA_DIR")
+	if subDir == "" {
+		subDir = "remnawave-beta"
+	}
+	dir := filepath.Join(appData, subDir)
 	_ = os.MkdirAll(dir, 0755)
-
 	return filepath.Join(dir, "servers.json")
-
 }
 
 
@@ -2693,7 +2688,7 @@ echo "SUCCESS_UNINSTALLED"
 	return types.CommandResult{Success: true, Output: outStr}
 }
 
-const AppCurrentVersion = "1.0.0"
+const AppCurrentVersion = "3.0.0-beta.1"
 
 // CheckAppUpdate checks for new versions on GitHub Releases
 func CheckAppUpdate(repo string) types.AppUpdateInfo {

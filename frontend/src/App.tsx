@@ -128,83 +128,60 @@ import {
 
 
 
-import {
+import * as AppBindings from "../bindings/remna-ui/app";
+import * as types from "../bindings/remna-ui/internal/types/models";
+import { Events } from "@wailsio/runtime";
 
+const {
   AttachNodeSecret,
-
   CheckDNS,
-
   TestSSH,
-
   GenerateConfig,
-
   StartDeployment,
-
   GetServers,
-
   SaveServer,
-
   DeleteServer,
-
   GetServerStatus,
-
   GetContainerLogs,
-
   RestartContainer,
-
   RestartAllStack,
-
   FixDatabaseSync,
-
   OpenBrowserURL,
-
   SelectDirectory,
-
   SelectSSHKeyFile,
-
   OptimizeNetworkBBR,
-
   ConfigureDockerMirrors,
-
   CreateBackup,
-
   DownloadBackup,
-
   RestoreBackup,
-
   UpdateStackImages,
-
   PruneDockerSystem,
-
   ResetSuperadmin,
-
   RenewSSL,
-
   ToggleAntiAbuse,
-
   InstallCloudflareWARP,
-
   ConfigureRealitySelfSteal,
-
   TestPanelAPI,
-
   CreateNodeInPanel,
   GetPanelConfigProfiles,
   GetPanelSquads,
   GetPanelNodes,
-
   ApplyAntiProbingFirewall,
-
   AuditNodeSecurity,
   DeploySelfStealDecoy,
   AutoFixSubscriptionToken,
   UninstallStack,
   CheckAppUpdate,
-} from "../wailsjs/go/main/App";
+} = AppBindings;
 
-import { types } from "../wailsjs/go/models";
-
-import { EventsOn, EventsOff } from "../wailsjs/runtime/runtime";
+const EventsOn = (eventName: string, callback: (...args: any[]) => void) => {
+  return Events.On(eventName, (ev: any) => {
+    callback(ev && ev.data !== undefined ? ev.data : ev);
+  });
+};
+const EventsOff = (eventName: string) => {
+  Events.Off(eventName);
+};
 
 import { InspectLogsModal } from "./components/modals/InspectLogsModal";
 
@@ -704,10 +681,10 @@ export function App() {
 
   const handleCopySystemInfo = () => {
     const info = `Remnawave Deployment & Manager Suite
-Версия: 1.0.0 (WinUI 3 Fluent Edition)
-Стек: Go 1.27 + Wails v2 + React 19 + TypeScript + WebView2
+Версия: 3.0.0-beta.1 (Wails v3 Preview)
+Стек: Go 1.27 + Wails v3.1 + React 19 + TypeScript + WebView2
 Платформа: Windows 11 / x64
-Хранилище: Windows DPAPI (enc:dpapi)`;
+Хранилище: Windows DPAPI (enc:dpapi / remnawave-beta)`;
     navigator.clipboard.writeText(info).then(() => {
       addToast("info", "Сведения о системе скопированы в буфер обмена!");
     });
@@ -2578,9 +2555,8 @@ export function App() {
       host: host,
       port: Number(port) || 22,
       username: user || "root",
-      auth_method: authMethod,
       password: authMethod === "password" ? password : "",
-      private_key: authMethod === "key" ? privateKey : "",
+      ssh_key: authMethod === "key" ? privateKey : "",
       web_url: calculatedWebUrl,
       role: editServerModal.role || (calculatedWebUrl ? "master" : "node"),
       parent_master_id: editServerModal.role === "node" ? (editServerModal.parentMasterId || "") : "",
@@ -2866,6 +2842,22 @@ export function App() {
 
               {activeTab === "about" && "О программе"}
 
+            </span>
+
+            <span
+              className="preset-badge"
+              style={{
+                marginLeft: "10px",
+                background: "rgba(168, 85, 247, 0.15)",
+                color: "#c084fc",
+                border: "1px solid rgba(168, 85, 247, 0.35)",
+                fontSize: "11px",
+                fontWeight: 600,
+                letterSpacing: "0.3px",
+                padding: "2px 8px"
+              }}
+            >
+              Wails v3 Beta
             </span>
 
           </div>
@@ -7476,12 +7468,12 @@ export function App() {
                         <span style={{ fontSize: "17px", fontWeight: 600, color: "var(--win-text-primary)" }}>
                           Remnawave Deployment & Manager Suite
                         </span>
-                        <span className="preset-badge" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
-                          v1.0.0 Stable
+                        <span className="preset-badge" style={{ background: "rgba(168, 85, 247, 0.15)", color: "#c084fc", border: "1px solid rgba(168, 85, 247, 0.35)" }}>
+                          v3.0.0-beta.1 (Wails v3 Preview)
                         </span>
                       </div>
                       <div style={{ fontSize: "12.5px", color: "var(--win-text-secondary)", marginTop: "3px" }}>
-                        WinUI 3 Fluent Design Edition · Windows x64
+                        WinUI 3 Fluent Design Edition · Wails v3 Experimental · Windows x64
                       </div>
                     </div>
                   </div>

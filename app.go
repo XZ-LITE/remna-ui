@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"remna-ui/internal/admin"
 	"remna-ui/internal/dns"
 	"remna-ui/internal/generator"
@@ -47,10 +47,12 @@ func (a *App) GenerateConfig(plan types.DeploymentPlan) types.GenerateResult {
 func (a *App) StartDeployment(plan types.DeploymentPlan) {
 	go func() {
 		res, err := ssh.DeployRemotely(a.ctx, plan, func(status, msg string) {
-			runtime.EventsEmit(a.ctx, "deploy:log", map[string]string{
-				"status":  status,
-				"message": msg,
-			})
+			if app := application.Get(); app != nil {
+				app.Event.Emit("deploy:log", map[string]string{
+					"status":  status,
+					"message": msg,
+				})
+			}
 		})
 
 		success := err == nil
@@ -69,7 +71,9 @@ func (a *App) StartDeployment(plan types.DeploymentPlan) {
 			payload["panel_url"] = res.PanelURL
 			payload["sub_url"] = res.SubURL
 		}
-		runtime.EventsEmit(a.ctx, "deploy:done", payload)
+		if app := application.Get(); app != nil {
+			app.Event.Emit("deploy:done", payload)
+		}
 	}()
 }
 
@@ -188,13 +192,21 @@ func (a *App) OpenBrowserURL(rawURL string) {
 			return
 		}
 	}
-	runtime.BrowserOpenURL(a.ctx, clean)
+	if app := application.Get(); app != nil {
+		_ = app.Browser.OpenURL(clean)
+	}
 }
 
 func (a *App) SelectDirectory() string {
-	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Выберите папку для сохранения файлов",
-	})
+	app := application.Get()
+	if app == nil {
+		return ""
+	}
+	dialog := app.Dialog.OpenFile().
+		SetTitle("Выберите папку для сохранения файлов").
+		CanChooseDirectories(true).
+		CanChooseFiles(false)
+	dir, err := dialog.PromptForSingleSelection()
 	if err != nil {
 		return ""
 	}
@@ -202,12 +214,14 @@ func (a *App) SelectDirectory() string {
 }
 
 func (a *App) SelectSSHKeyFile() string {
-	file, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Выберите приватный SSH-ключ (id_rsa, id_ed25519, *.pem)",
-		Filters: []runtime.FileFilter{
-			{DisplayName: "SSH Keys (*, *.pem, id_*)", Pattern: "*;*.pem;id_*"},
-		},
-	})
+	app := application.Get()
+	if app == nil {
+		return ""
+	}
+	dialog := app.Dialog.OpenFile().
+		SetTitle("Выберите приватный SSH-ключ (id_rsa, id_ed25519, *.pem)").
+		AddFilter("SSH Keys (*, *.pem, id_*)", "*;*.pem;id_*")
+	file, err := dialog.PromptForSingleSelection()
 	if err != nil {
 		return ""
 	}
@@ -215,13 +229,15 @@ func (a *App) SelectSSHKeyFile() string {
 }
 
 func (a *App) DownloadBackup(server types.SavedServer, fileName string) types.CommandResult {
-	targetPath, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Сохранить резервную копию на диск",
-		DefaultFilename: fileName,
-		Filters: []runtime.FileFilter{
-			{DisplayName: "Gzip Archive (*.tar.gz)", Pattern: "*.tar.gz"},
-		},
-	})
+	app := application.Get()
+	if app == nil {
+		return types.CommandResult{Success: false, Error: "Приложение недоступно."}
+	}
+	dialog := app.Dialog.SaveFile().
+		SetMessage("Сохранить резервную копию на диск").
+		SetFilename(fileName).
+		AddFilter("Gzip Archive (*.tar.gz)", "*.tar.gz")
+	targetPath, err := dialog.PromptForSingleSelection()
 	if err != nil || targetPath == "" {
 		return types.CommandResult{Success: false, Error: "Сохранение отменено пользователем."}
 	}
