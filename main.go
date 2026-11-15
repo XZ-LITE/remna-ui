@@ -22,6 +22,17 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "org.remnawave.ui.beta",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				if a := application.Get(); a != nil {
+					if win := a.Window.Current(); win != nil {
+						win.Show()
+						win.Focus()
+					}
+				}
+			},
+		},
 	})
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{

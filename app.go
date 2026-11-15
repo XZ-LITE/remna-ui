@@ -206,6 +206,9 @@ func (a *App) SelectDirectory() string {
 		SetTitle("Выберите папку для сохранения файлов").
 		CanChooseDirectories(true).
 		CanChooseFiles(false)
+	if win := app.Window.Current(); win != nil {
+		dialog.AttachToWindow(win)
+	}
 	dir, err := dialog.PromptForSingleSelection()
 	if err != nil {
 		return ""
@@ -221,6 +224,9 @@ func (a *App) SelectSSHKeyFile() string {
 	dialog := app.Dialog.OpenFile().
 		SetTitle("Выберите приватный SSH-ключ (id_rsa, id_ed25519, *.pem)").
 		AddFilter("SSH Keys (*, *.pem, id_*)", "*;*.pem;id_*")
+	if win := app.Window.Current(); win != nil {
+		dialog.AttachToWindow(win)
+	}
 	file, err := dialog.PromptForSingleSelection()
 	if err != nil {
 		return ""
@@ -237,6 +243,9 @@ func (a *App) DownloadBackup(server types.SavedServer, fileName string) types.Co
 		SetMessage("Сохранить резервную копию на диск").
 		SetFilename(fileName).
 		AddFilter("Gzip Archive (*.tar.gz)", "*.tar.gz")
+	if win := app.Window.Current(); win != nil {
+		dialog.AttachToWindow(win)
+	}
 	targetPath, err := dialog.PromptForSingleSelection()
 	if err != nil || targetPath == "" {
 		return types.CommandResult{Success: false, Error: "Сохранение отменено пользователем."}
