@@ -26,10 +26,10 @@ func NewApp() *App {
 	return &App{}
 }
 
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
-func (a *App) startup(ctx context.Context) {
+// ServiceStartup is called by Wails v3 runtime when the service is registered
+func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	a.ctx = ctx
+	return nil
 }
 
 func (a *App) CheckDNS(domain string) types.DNSResult {

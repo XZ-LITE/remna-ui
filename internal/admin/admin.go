@@ -217,11 +217,23 @@ func getStorePath() string {
 	}
 	subDir := os.Getenv("REMNAWAVE_DATA_DIR")
 	if subDir == "" {
-		subDir = "remnawave-beta"
+		subDir = "remnawave"
 	}
 	dir := filepath.Join(appData, subDir)
 	_ = os.MkdirAll(dir, 0755)
-	return filepath.Join(dir, "servers.json")
+	target := filepath.Join(dir, "servers.json")
+
+	// Auto-migrate from remnawave-beta if target is empty/missing and beta data exists
+	if subDir == "remnawave" {
+		if fi, err := os.Stat(target); os.IsNotExist(err) || fi.Size() == 0 {
+			betaPath := filepath.Join(appData, "remnawave-beta", "servers.json")
+			if betaData, err := os.ReadFile(betaPath); err == nil && len(betaData) > 0 {
+				_ = os.WriteFile(target, betaData, 0600)
+			}
+		}
+	}
+
+	return target
 }
 
 
@@ -2688,7 +2700,7 @@ echo "SUCCESS_UNINSTALLED"
 	return types.CommandResult{Success: true, Output: outStr}
 }
 
-const AppCurrentVersion = "3.0.0-beta.1"
+const AppCurrentVersion = "2.0.0"
 
 // CheckAppUpdate checks for new versions on GitHub Releases
 func CheckAppUpdate(repo string) types.AppUpdateInfo {
@@ -2777,10 +2789,17 @@ func CheckAppUpdate(repo string) types.AppUpdateInfo {
 }
 
 func isVersionNewer(latest, current string) bool {
-	latest = strings.TrimPrefix(strings.TrimSpace(latest), "v")
-	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
-	lParts := strings.Split(latest, ".")
-	cParts := strings.Split(current, ".")
+	cleanVersion := func(v string) string {
+		v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+		if idx := strings.IndexAny(v, "-+"); idx != -1 {
+			v = v[:idx]
+		}
+		return v
+	}
+	lClean := cleanVersion(latest)
+	cClean := cleanVersion(current)
+	lParts := strings.Split(lClean, ".")
+	cParts := strings.Split(cClean, ".")
 	for i := 0; i < len(lParts) && i < len(cParts); i++ {
 		var lNum, cNum int
 		fmt.Sscanf(lParts[i], "%d", &lNum)
@@ -2792,5 +2811,14 @@ func isVersionNewer(latest, current string) bool {
 			return false
 		}
 	}
-	return len(lParts) > len(cParts)
+	if len(lParts) != len(cParts) {
+		return len(lParts) > len(cParts)
+	}
+	// If base numeric versions are equal (e.g. 2.0.0 vs 2.0.0-beta.1), stable is newer than pre-release
+	currentHasPre := strings.ContainsAny(current, "-+")
+	latestHasPre := strings.ContainsAny(latest, "-+")
+	if currentHasPre && !latestHasPre {
+		return true
+	}
+	return false
 }

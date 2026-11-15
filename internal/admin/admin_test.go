@@ -246,6 +246,10 @@ func TestVersionComparison(t *testing.T) {
 		{"3.0.0", "2.9.9", false},
 		{"v3.0.0", "v3.0.5", true},
 		{"v3.1.2", "v3.1.1", false},
+		{"3.0.0-beta.1", "3.0.0", true},
+		{"2.0.0-beta.1", "2.0.0", true},
+		{"2.0.0-beta.1", "2.0.1", true},
+		{"2.0.0", "2.0.0-beta.1", false},
 	}
 
 	for _, tt := range tests {

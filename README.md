@@ -4,7 +4,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.27+-00ADD8?style=flat&logo=go)](https://golang.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react)](https://react.dev)
-[![Wails](https://img.shields.io/badge/Wails-v2-DF1A2A?style=flat)](https://wails.io)
+[![Wails](https://img.shields.io/badge/Wails-v3-DF1A2A?style=flat)](https://wails.io)
 [![Windows](https://img.shields.io/badge/Platform-Windows%2011%20%2F%2010-0078D6?style=flat&logo=windows)](https://microsoft.com)
 [![Documentation](https://img.shields.io/badge/Docs-Remnawave-blue?style=flat)](https://docs.rw/overview/quick-start/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -64,7 +64,7 @@ remna-ui/
 │   │   ├── style.css           # WinUI 3 Fluent стили, переменные тем, анимации
 │   │   └── components/         # Модальные окна и переиспользуемые виджеты
 │   └── vite.config.mjs         # Конфигурация Vite
-└── wails.json                  # Конфигурация сборщика Wails v2
+└── go.mod                      # Модуль Go и зависимости Wails v3
 ```
 
 ---
@@ -73,9 +73,9 @@ remna-ui/
 
 ### Требования
 - **ОС**: Windows 10/11 (x64)
-- **Go**: версия 1.22 или выше ([golang.org](https://golang.org))
+- **Go**: версия 1.24 или выше (рекомендуется 1.27) ([golang.org](https://golang.org))
 - **Node.js**: версия 20.x или выше ([nodejs.org](https://nodejs.org))
-- **Wails CLI**: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- **WebView2 Runtime**: предустановлен в Windows 10/11 или доступен с [microsoft.com](https://developer.microsoft.com/microsoft-edge/webview2/)
 
 ### Инструкция по сборке
 
@@ -85,21 +85,17 @@ remna-ui/
    cd remna-ui
    ```
 
-2. Установите зависимости фронтенда:
+2. Соберите фронтенд:
    ```bash
    cd frontend
    npm install
+   npm run build
    cd ..
    ```
 
-3. Запустите в режиме разработки (Hot Reload):
+3. Скомпилируйте нативный бинарный файл Wails v3:
    ```bash
-   wails dev
-   ```
-
-4. Соберите релизный автономный бинарник:
-   ```bash
-   wails build -clean -s
+   go build -ldflags "-H windowsgui -s -w" -o build/bin/remna-ui.exe .
    ```
    Скомпилированный файл будет находиться по пути: `build/bin/remna-ui.exe`.
 
