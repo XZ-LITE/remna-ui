@@ -704,7 +704,7 @@ export function App() {
 
   const handleCopySystemInfo = () => {
     const info = `Remnawave Deployment & Manager Suite
-Версия: 3.0.0 (WinUI 3 Fluent Edition)
+Версия: 1.0.0 (WinUI 3 Fluent Edition)
 Стек: Go 1.27 + Wails v2 + React 19 + TypeScript + WebView2
 Платформа: Windows 11 / x64
 Хранилище: Windows DPAPI (enc:dpapi)`;
@@ -7477,7 +7477,7 @@ export function App() {
                           Remnawave Deployment & Manager Suite
                         </span>
                         <span className="preset-badge" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
-                          v3.0.0 Stable
+                          v1.0.0 Stable
                         </span>
                       </div>
                       <div style={{ fontSize: "12.5px", color: "var(--win-text-secondary)", marginTop: "3px" }}>

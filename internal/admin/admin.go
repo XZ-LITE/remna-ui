@@ -2693,7 +2693,7 @@ echo "SUCCESS_UNINSTALLED"
 	return types.CommandResult{Success: true, Output: outStr}
 }
 
-const AppCurrentVersion = "3.0.0"
+const AppCurrentVersion = "1.0.0"
 
 // CheckAppUpdate checks for new versions on GitHub Releases
 func CheckAppUpdate(repo string) types.AppUpdateInfo {
