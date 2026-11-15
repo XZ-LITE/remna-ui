@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"os/exec"
+	runtimeOS "runtime"
+	"strings"
+	"syscall"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"remna-ui/internal/admin"
@@ -172,8 +176,19 @@ func (a *App) DeploySelfStealDecoy(server types.SavedServer, domain string) type
 	return admin.DeploySelfStealDecoy(server, domain)
 }
 
-func (a *App) OpenBrowserURL(url string) {
-	runtime.BrowserOpenURL(a.ctx, url)
+func (a *App) OpenBrowserURL(rawURL string) {
+	clean := strings.TrimSpace(rawURL)
+	if clean == "" {
+		return
+	}
+	if runtimeOS.GOOS == "windows" {
+		cmd := exec.Command("cmd", "/c", "start", "", clean)
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		if err := cmd.Start(); err == nil {
+			return
+		}
+	}
+	runtime.BrowserOpenURL(a.ctx, clean)
 }
 
 func (a *App) SelectDirectory() string {

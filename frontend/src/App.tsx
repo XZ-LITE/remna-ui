@@ -2828,7 +2828,7 @@ export function App() {
           <div
             className="nav-item"
             title="Официальная документация Remnawave"
-            onClick={() => OpenBrowserURL("https://docs.rw")}
+            onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
           >
             <span className="nav-item-icon"><ExternalLink size={15} /></span>
             <span>Документация Remna</span>
@@ -2898,7 +2898,7 @@ export function App() {
               type="button"
               className="win-commandbar-btn"
               title="Официальная документация Remnawave"
-              onClick={() => OpenBrowserURL("https://docs.rw")}
+              onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
             >
               <ExternalLink size={13} />
               <span>Документация</span>
@@ -7640,7 +7640,7 @@ export function App() {
                         type="button"
                         className="win-button"
                         style={{ height: "28px", fontSize: "11.5px" }}
-                        onClick={() => OpenBrowserURL("https://docs.remnawave.org")}
+                        onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
                       >
                         <ExternalLink size={12} />
                         <span>Документация</span>

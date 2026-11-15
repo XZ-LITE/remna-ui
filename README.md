@@ -6,6 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react)](https://react.dev)
 [![Wails](https://img.shields.io/badge/Wails-v2-DF1A2A?style=flat)](https://wails.io)
 [![Windows](https://img.shields.io/badge/Platform-Windows%2011%20%2F%2010-0078D6?style=flat&logo=windows)](https://microsoft.com)
+[![Documentation](https://img.shields.io/badge/Docs-Remnawave-blue?style=flat)](https://docs.rw/overview/quick-start/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
