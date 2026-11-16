@@ -2542,6 +2542,7 @@ export function App() {
       locationCode: (srv as any).location_code || "",
       decoyDomain: (srv as any).decoy_domain || "",
       isExternalMaster: Boolean((srv as any).is_external_master),
+      webUrl: srv.web_url || "",
     });
   };
 
@@ -2555,22 +2556,50 @@ export function App() {
 
     const { server, name, host, port, user, authMethod, password, privateKey } = editServerModal;
 
-    if (!host) {
+    if (!host || !host.trim()) {
 
-      addToast("error", "Укажите IP или хост сервера");
+      addToast("error", "Укажите IP-адрес или хост сервера");
 
       return;
 
     }
 
-    const calculatedWebUrl = editServerModal.role === "node"
-      ? ""
-      : (server.web_url || (name && name.includes(".") ? (name.startsWith("http") ? name : `https://${name}`) : (host && !host.includes(":") ? `https://${host}` : "")));
+    if (authMethod === "password" && !password?.trim()) {
+
+      addToast("error", "Укажите пароль root для подключения по SSH");
+
+      return;
+
+    }
+
+    if (authMethod === "key" && !privateKey?.trim()) {
+
+      addToast("error", "Укажите путь к приватному SSH-ключу");
+
+      return;
+
+    }
+
+    let calculatedWebUrl = "";
+    if (editServerModal.role === "master") {
+      if (editServerModal.webUrl?.trim()) {
+        calculatedWebUrl = editServerModal.webUrl.trim();
+        if (!calculatedWebUrl.startsWith("http://") && !calculatedWebUrl.startsWith("https://")) {
+          calculatedWebUrl = `https://${calculatedWebUrl}`;
+        }
+      } else if (server.web_url) {
+        calculatedWebUrl = server.web_url;
+      } else if (name && name.includes(".")) {
+        calculatedWebUrl = name.startsWith("http") ? name : `https://${name}`;
+      } else if (host && !host.includes(":")) {
+        calculatedWebUrl = `https://${host}`;
+      }
+    }
 
     const updated = new types.SavedServer({
       id: server.id,
-      label: name || host,
-      host: host,
+      label: name || host.trim(),
+      host: host.trim(),
       port: Number(port) || 22,
       username: user || "root",
       password: authMethod === "password" ? password : "",
@@ -2581,7 +2610,7 @@ export function App() {
       location_code: editServerModal.role === "node" ? (editServerModal.locationCode || "") : "",
       decoy_domain: editServerModal.role === "node" ? (editServerModal.decoyDomain || "") : "",
       is_external_master: editServerModal.role === "master" ? Boolean(editServerModal.isExternalMaster) : false,
-      last_seen: server.last_seen,
+      last_seen: server.last_seen || "Только что добавлен",
     });
 
 
@@ -2599,6 +2628,8 @@ export function App() {
         const list = await GetServers();
 
         setSavedServers(list || []);
+
+        handleInspectServer(updated);
 
       } else {
 
@@ -5965,6 +5996,9 @@ export function App() {
                           password: "",
                           role: "master",
                           isExternalMaster: true,
+                          webUrl: "",
+                          locationCode: "",
+                          decoyDomain: "",
                         });
                       }}
                       title="Добавить уже работающий сервер (Master или Node) вручную в каталог"
@@ -6061,6 +6095,9 @@ export function App() {
                             password: "",
                             role: "master",
                             isExternalMaster: true,
+                            webUrl: "",
+                            locationCode: "",
+                            decoyDomain: "",
                           });
                         }}
                       >
@@ -8032,6 +8069,8 @@ export function App() {
           onSave={handleSaveEditedServer}
 
           onSelectKeyFile={SelectSSHKeyFile}
+
+          onTestSSH={(h, p, u, pass, key) => TestSSH(h, p, u, pass, key)}
 
         />
 
