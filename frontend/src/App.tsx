@@ -29,10 +29,10 @@ import {
   Lock,
 
   ChevronRight,
-
   ChevronDown,
-
   ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
 
   HardDrive,
 
@@ -612,6 +612,30 @@ export function App() {
   const [serverStatus, setServerStatus] = useState<{ [id: string]: types.ServerStatusResult }>({});
 
   const [serverLoading, setServerLoading] = useState<{ [id: string]: boolean }>({});
+
+  const [collapsedServers, setCollapsedServers] = useState<Record<string, boolean>>({});
+
+  const toggleServerCollapse = useCallback((id: string) => {
+    setCollapsedServers((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  }, []);
+
+  const toggleAllCollapse = useCallback(() => {
+    setCollapsedServers((prev) => {
+      const allCollapsed = savedServers.length > 0 && savedServers.every((s) => prev[s.id]);
+      const next: Record<string, boolean> = {};
+      for (const s of savedServers) {
+        next[s.id] = !allCollapsed;
+      }
+      return next;
+    });
+  }, [savedServers]);
+
+  const areAllCollapsed = useMemo(() => {
+    return savedServers.length > 0 && savedServers.every((s) => collapsedServers[s.id]);
+  }, [savedServers, collapsedServers]);
 
   // Memoized server classification and hierarchy tree
   const isMasterServer = useCallback(
@@ -6003,39 +6027,36 @@ export function App() {
 
               <div key="tab-servers" className="tab-enter">
 
-                <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
-
-                  <div>
-
+                <div className="catalog-page-header">
+                  <div className="catalog-header-text">
                     <h1 className="page-title">Мои серверы</h1>
-
                     <p className="page-desc">
-
                       Управление стеком Remnawave, мониторинг системных ресурсов и логи контейнеров в реальном времени.
-
                     </p>
-
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div className="catalog-toolbar-group">
+                    <button
+                      className="win-button"
+                      disabled={Object.values(serverLoading).some(Boolean)}
+                      onClick={handleInspectAllServers}
+                      title="Опросить состояние всех сохраненных серверов (параллельно)"
+                    >
+                      <RefreshCw size={13} className={Object.values(serverLoading).some(Boolean) ? "animate-spin" : ""} />
+                      <span>Обновить все</span>
+                    </button>
 
                     <button
-
                       className="win-button"
-
-                      disabled={Object.values(serverLoading).some(Boolean)}
-
-                      onClick={handleInspectAllServers}
-
-                      title="Опросить состояние всех сохраненных серверов (параллельно)"
-
+                      disabled={savedServers.length === 0}
+                      onClick={toggleAllCollapse}
+                      title={areAllCollapsed ? "Развернуть все серверные карточки" : "Свернуть все серверные карточки в компактный вид (Accordion)"}
                     >
-
-                      <RefreshCw size={13} className={Object.values(serverLoading).some(Boolean) ? "animate-spin" : ""} />
-
-                      <span>Обновить все</span>
-
+                      {areAllCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+                      <span>{areAllCollapsed ? "Развернуть все" : "Свернуть все"}</span>
                     </button>
+
+                    <div className="catalog-toolbar-divider" />
 
                     <button
                       className="win-button"
@@ -6069,13 +6090,12 @@ export function App() {
                       <Plus size={13} />
                       <span>Добавить вручную</span>
                     </button>
+
                     <button className="win-button primary" onClick={() => setActiveTab("wizard")}>
                       <Plus size={14} />
                       <span>Развернуть новый сервер</span>
                     </button>
-
                   </div>
-
                 </div>
 
 
@@ -6189,6 +6209,7 @@ export function App() {
                       const hasRunningNode = status?.containers?.some((c) => c.name === "remnanode" && c.running);
                       const isNodeAvailable = Boolean(hasRunningNode || status?.node_present);
                       const hasMasterContainer = Boolean(status?.containers?.some((c) => c.name === "remnawave"));
+                      const isCollapsed = Boolean(collapsedServers[srv.id]);
 
                       // Reliable role detection:
                       // 1. Explicit role if set in SavedServer ("node" vs "master")
@@ -6205,66 +6226,60 @@ export function App() {
                         ? false
                         : Boolean(srv.web_url && !isIpAddress(srv.host));
 
-
-
                       const getServiceMeta = (name: string) => {
-
                         switch (name) {
-
                           case "remnawave":
-
                             return { role: "Панель & API Core", icon: <Server size={14} style={{ color: "var(--win-accent)" }} /> };
-
                           case "remnawave-db":
-
                             return { role: "PostgreSQL База данных", icon: <Database size={14} style={{ color: "#818cf8" }} /> };
-
                           case "remnawave-redis":
-
                             return { role: "Valkey Сессии & Кэш", icon: <Activity size={14} style={{ color: "#fbbf24" }} /> };
-
                           case "remnawave-nginx":
-
                             return { role: "Nginx SSL & Прокси", icon: <Globe size={14} style={{ color: "#34d399" }} /> };
-
                           case "remnawave-caddy":
-
                           case "caddy":
-
                             return { role: "Caddy Авто-SSL & Прокси", icon: <Globe size={14} style={{ color: "#38bdf8" }} /> };
-
                           case "remnanode":
-
                             return { role: "Xray Reality Нода", icon: <Radio size={14} style={{ color: "var(--win-node-accent)" }} /> };
-
                           default:
-
                             return { role: "Docker Служба", icon: <Layers size={14} style={{ color: "#9ca3af" }} /> };
-
                         }
-
                       };
 
-
-
                       const rawSubTab = serverSubTab[srv.id] || "overview";
-
                       const currentSubTab = rawSubTab === "containers" ? "overview" : rawSubTab;
 
-
-
                       return (
-
                         <div
                           key={srv.id}
-                          className={`server-item-card ${isMaster ? "master-card" : "node-card"} ${isChild ? "child-node-card" : ""} ${activeServerMenu === srv.id ? "menu-open" : ""}`}
+                          className={`server-item-card ${isMaster ? "master-card" : "node-card"} ${isChild ? "child-node-card" : ""} ${activeServerMenu === srv.id ? "menu-open" : ""} ${isCollapsed ? "collapsed" : ""}`}
                           style={{ "--server-index": cardIndex } as React.CSSProperties}
                         >
                           {/* Server Card Header (Modern 2-Tier Responsive Layout) */}
-                          <div className="server-item-header">
+                          <div
+                            className="server-item-header"
+                            onClick={() => {
+                              if (isCollapsed) {
+                                toggleServerCollapse(srv.id);
+                              }
+                            }}
+                          >
                             {/* Row 1: Identity & Primary Hero Action */}
                             <div className="server-header-top">
                               <div className="server-identity-group">
+                                <button
+                                  className="server-accordion-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleServerCollapse(srv.id);
+                                  }}
+                                  title={isCollapsed ? "Развернуть карточку сервера" : "Свернуть карточку сервера"}
+                                >
+                                  <ChevronDown
+                                    size={14}
+                                    className={`server-accordion-chevron ${isCollapsed ? "collapsed" : "expanded"}`}
+                                  />
+                                </button>
                                 <div className="server-item-icon" style={{ color: isMaster ? "var(--win-master-accent)" : "var(--win-node-accent)" }}>
                                   {isMaster ? <Server size={22} /> : <Radio size={22} />}
                                 </div>
@@ -6345,6 +6360,32 @@ export function App() {
                                       </span>
                                     );
                                   })()}
+
+                                  {isCollapsed && status?.success && (
+                                    <div className="server-compact-metrics">
+                                      {status.metrics?.ram_percent !== undefined && status.metrics.ram_percent > 0 && (
+                                        <span className="server-compact-pill ram" title={`Использование памяти: ${status.metrics.ram_used_mb || 0} / ${status.metrics.ram_total_mb || 0} MB`}>
+                                          <Cpu size={10} />
+                                          <span>RAM {status.metrics.ram_percent}%</span>
+                                        </span>
+                                      )}
+                                      {totalCount > 0 && (
+                                        <span
+                                          className={`server-compact-pill ${runningCount === totalCount ? "services-ok" : "services-warn"}`}
+                                          title={`Контейнеры: ${runningCount} из ${totalCount} активны`}
+                                        >
+                                          <Layers size={10} />
+                                          <span>{runningCount}/{totalCount} служб</span>
+                                        </span>
+                                      )}
+                                      {status.latency_ms ? (
+                                        <span className="server-compact-pill" title={`SSH задержка: ${status.latency_ms} ms`}>
+                                          <Zap size={10} style={{ color: "#fbbf24" }} />
+                                          <span>{status.latency_ms} ms</span>
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -6570,81 +6611,85 @@ export function App() {
                             </div>
 
                             {/* Row 2: Metadata Chips & Secondary Action Toolbar */}
-                            <div className="server-header-bottom">
-                              <div className="server-meta-chips">
-                                <span
-                                  className={`server-chip mono ${copiedKey === `ssh-${srv.id}` ? "copied" : ""}`}
-                                  onClick={() => handleCopy(`${srv.username}@${srv.host}:${srv.port}`, "SSH", `ssh-${srv.id}`)}
-                                  title="Нажмите, чтобы скопировать SSH"
-                                >
-                                  {copiedKey === `ssh-${srv.id}` ? (
-                                    <>
-                                      <Check size={11} style={{ color: "#34d399" }} />
-                                      <span style={{ color: "#34d399", fontWeight: 600 }}>Скопировано!</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <TerminalIcon size={11} />
-                                      <span>{srv.username}@{srv.host}:{srv.port}</span>
-                                      <Copy size={10} style={{ opacity: 0.6 }} />
-                                    </>
-                                  )}
-                                </span>
-
-                                {status?.latency_ms ? (
+                            {!isCollapsed && (
+                              <div className="server-header-bottom">
+                                <div className="server-meta-chips">
                                   <span
-                                    className={`server-chip latency ${
-                                      status.latency_ms < 60
-                                        ? "fast"
-                                        : status.latency_ms < 150
-                                        ? "medium"
-                                        : "slow"
-                                    }`}
-                                    title="Задержка SSH соединения"
+                                    className={`server-chip mono ${copiedKey === `ssh-${srv.id}` ? "copied" : ""}`}
+                                    onClick={() => handleCopy(`${srv.username}@${srv.host}:${srv.port}`, "SSH", `ssh-${srv.id}`)}
+                                    title="Нажмите, чтобы скопировать SSH"
                                   >
-                                    <Zap size={11} />
-                                    <span>{status.latency_ms} ms</span>
+                                    {copiedKey === `ssh-${srv.id}` ? (
+                                      <>
+                                        <Check size={11} style={{ color: "#34d399" }} />
+                                        <span style={{ color: "#34d399", fontWeight: 600 }}>Скопировано!</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <TerminalIcon size={11} />
+                                        <span>{srv.username}@{srv.host}:{srv.port}</span>
+                                        <Copy size={10} style={{ opacity: 0.6 }} />
+                                      </>
+                                    )}
                                   </span>
-                                ) : null}
 
-                                {status?.host_info ? (
-                                  <span className="server-chip os" title={status.host_info}>
-                                    <Layers size={11} />
-                                    <span>{status.host_info.split("(")[0].replace("GNU/Linux", "").trim()}</span>
-                                  </span>
-                                ) : null}
+                                  {status?.latency_ms ? (
+                                    <span
+                                      className={`server-chip latency ${
+                                        status.latency_ms < 60
+                                          ? "fast"
+                                          : status.latency_ms < 150
+                                          ? "medium"
+                                          : "slow"
+                                      }`}
+                                      title="Задержка SSH соединения"
+                                    >
+                                      <Zap size={11} />
+                                      <span>{status.latency_ms} ms</span>
+                                    </span>
+                                  ) : null}
 
-                                {status?.bbr_active ? (
-                                  <span className="server-chip bbr" title="Google BBR ускорение сети включено">
-                                    <Zap size={11} />
-                                    <span>BBR</span>
-                                  </span>
-                                ) : null}
+                                  {status?.host_info ? (
+                                    <span className="server-chip os" title={status.host_info}>
+                                      <Layers size={11} />
+                                      <span>{status.host_info.split("(")[0].replace("GNU/Linux", "").trim()}</span>
+                                    </span>
+                                  ) : null}
 
-                                {status?.performance_optimized ? (
-                                  <span className="server-chip bbr" style={{ background: "rgba(168, 85, 247, 0.15)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)" }} title="Оптимизация RAM (512MB) и Unix сокетов Valkey активна">
-                                    <Cpu size={11} />
-                                    <span>RAM 512M</span>
-                                  </span>
-                                ) : null}
+                                  {status?.bbr_active ? (
+                                    <span className="server-chip bbr" title="Google BBR ускорение сети включено">
+                                      <Zap size={11} />
+                                      <span>BBR</span>
+                                    </span>
+                                  ) : null}
+
+                                  {status?.performance_optimized ? (
+                                    <span className="server-chip bbr" style={{ background: "rgba(168, 85, 247, 0.15)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)" }} title="Оптимизация RAM (512MB) и Unix сокетов Valkey активна">
+                                      <Cpu size={11} />
+                                      <span>RAM 512M</span>
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div className="server-toolbar-actions">
+                                  {isMaster && (
+                                    <button
+                                      className="win-button toolbar-action-btn"
+                                      onClick={() => handleAddNodeToPanel(srv)}
+                                      title="Развернуть новую ноду и связать её с этой мастер-панелью"
+                                    >
+                                      <Plus size={13} style={{ color: "var(--win-accent)" }} />
+                                      <span>Нода</span>
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-
-                              <div className="server-toolbar-actions">
-                                {isMaster && (
-                                  <button
-                                    className="win-button toolbar-action-btn"
-                                    onClick={() => handleAddNodeToPanel(srv)}
-                                    title="Развернуть новую ноду и связать её с этой мастер-панелью"
-                                  >
-                                    <Plus size={13} style={{ color: "var(--win-accent)" }} />
-                                    <span>Нода</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
+                            )}
                           </div>
 
-                          {/* Offline Alert Banner (Fast Retry & Delete) */}
+                          {!isCollapsed && (
+                            <>
+                              {/* Offline Alert Banner (Fast Retry & Delete) */}
                           {status && !status.success && (
                             <div className="server-offline-banner">
                               <AlertTriangle size={15} style={{ color: "#f87171", flexShrink: 0 }} />
@@ -6884,11 +6929,20 @@ export function App() {
                                         {status.containers.map((c, cIdx) => {
                                           const meta = getServiceMeta(c.name);
                                           const statusStr = (c.status || "").toLowerCase();
-                                          const isUnhealthy = statusStr.includes("unhealthy") || statusStr.startsWith("restarting") || (c as any).healthy === "unhealthy";
-                                          const isStarting = statusStr.includes("starting") || (c as any).healthy === "starting";
-                                          const isRunningOk = c.running && !isUnhealthy;
-                                          const dotClass = isUnhealthy ? "unhealthy" : isStarting ? "starting" : isRunningOk ? "running" : "stopped";
-                                          const textColor = isUnhealthy ? "#fb7185" : isStarting ? "#fbbf24" : isRunningOk ? "#34d399" : "#fb7185";
+                                          const healthyField = ((c as any).healthy || "").toLowerCase();
+                                          const isRestarting = statusStr.startsWith("restarting") || healthyField === "restarting";
+                                          const isUnhealthy = !isRestarting && (statusStr.includes("unhealthy") || healthyField === "unhealthy");
+                                          const isStarting = !isRestarting && !isUnhealthy && (statusStr.includes("starting") || healthyField === "starting");
+                                          const isExplicitHealthy = !isRestarting && !isUnhealthy && !isStarting && (statusStr.includes("(healthy)") || healthyField === "healthy");
+                                          const isRunningStandard = c.running && !isRestarting && !isUnhealthy && !isStarting;
+
+                                          const dotClass = isUnhealthy || isRestarting
+                                            ? "unhealthy"
+                                            : isStarting
+                                            ? "starting"
+                                            : isRunningStandard || isExplicitHealthy
+                                            ? "running"
+                                            : "stopped";
 
                                           return (
                                             <tr key={cIdx}>
@@ -6914,24 +6968,37 @@ export function App() {
                                                 </span>
                                               </td>
                                               <td className="col-status" title={c.status}>
-                                                <span
-                                                  style={{
-                                                    color: textColor,
-                                                    fontWeight: isUnhealthy ? 600 : 500,
-                                                    display: "inline-flex",
-                                                    alignItems: "center",
-                                                    gap: "5px",
-                                                  }}
-                                                >
-                                                  {isUnhealthy && <AlertTriangle size={12} style={{ color: "#fb7185", flexShrink: 0 }} />}
-                                                  <span>
-                                                    {isUnhealthy
-                                                      ? `${c.status.replace(/\s*\(unhealthy\)/i, "")} (сбой)`
-                                                      : isStarting
-                                                      ? `${c.status.replace(/\s*\(health:\s*starting\)/i, "")} (запуск...)`
-                                                      : c.status.replace(/\s*\(healthy\)/i, "")}
+                                                {isExplicitHealthy ? (
+                                                  <span className="container-health-badge healthy" title="Контейнер активен и успешно проходит встроенную проверку здоровья (Docker Healthcheck)">
+                                                    <CheckCircle2 size={12} />
+                                                    <span>{c.status.replace(/\s*\(healthy\)/i, "")} · Здоров</span>
                                                   </span>
-                                                </span>
+                                                ) : isStarting ? (
+                                                  <span className="container-health-badge starting" title="Служба запускается и прогревается (Docker Healthcheck Starting)">
+                                                    <Clock size={12} />
+                                                    <span>{c.status.replace(/\s*\(health:\s*starting\)/i, "").replace(/\s*starting/i, "")} · Запуск...</span>
+                                                  </span>
+                                                ) : isUnhealthy ? (
+                                                  <span className="container-health-badge unhealthy" title="Внутренний сбой службы или отказ healthcheck-пробы">
+                                                    <AlertTriangle size={12} />
+                                                    <span>{c.status.replace(/\s*\(unhealthy\)/i, "")} · Сбой</span>
+                                                  </span>
+                                                ) : isRestarting ? (
+                                                  <span className="container-health-badge restarting" title="Контейнер в циклическом перезапуске (CrashLoopBackOff)">
+                                                    <RotateCcw size={12} className="animate-spin" />
+                                                    <span>Перезапуск...</span>
+                                                  </span>
+                                                ) : isRunningStandard ? (
+                                                  <span className="container-health-badge running" title="Контейнер активен и функционирует">
+                                                    <Check size={12} />
+                                                    <span>{c.status}</span>
+                                                  </span>
+                                                ) : (
+                                                  <span className="container-health-badge stopped" title="Контейнер остановлен">
+                                                    <AlertCircle size={12} />
+                                                    <span>{c.status || "Остановлен"}</span>
+                                                  </span>
+                                                )}
                                               </td>
                                               <td className="col-actions">
                                                 <div style={{ display: "inline-flex", gap: "6px", justifyContent: "flex-end", flexWrap: "nowrap" }}>
@@ -7548,6 +7615,8 @@ export function App() {
                                 </div>
                               </div>
                             </div>
+                          )}
+                            </>
                           )}
                         </div>
                       );

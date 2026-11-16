@@ -267,5 +267,92 @@ func TestVersionComparison(t *testing.T) {
 	}
 }
 
+func TestParseContainerLine_HealthcheckMatrix(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantOK      bool
+		wantName    string
+		wantRunning bool
+		wantHealthy string
+	}{
+		{
+			name:        "Healthy container",
+			input:       "remnawave\tUp 2 hours (healthy)\tremnawave:latest",
+			wantOK:      true,
+			wantName:    "remnawave",
+			wantRunning: true,
+			wantHealthy: "healthy",
+		},
+		{
+			name:        "Unhealthy container (degraded)",
+			input:       "remnawave-db\tUp 15 minutes (unhealthy)\tpostgres:16-alpine",
+			wantOK:      true,
+			wantName:    "remnawave-db",
+			wantRunning: false,
+			wantHealthy: "unhealthy",
+		},
+		{
+			name:        "Starting healthcheck container",
+			input:       "remnawave-redis\tUp 12 seconds (health: starting)\tvalkey/valkey:8-alpine",
+			wantOK:      true,
+			wantName:    "remnawave-redis",
+			wantRunning: true,
+			wantHealthy: "starting",
+		},
+		{
+			name:        "Crashloop restarting container",
+			input:       "remnanode\tRestarting (1) 5 seconds ago\tremnanode:latest",
+			wantOK:      true,
+			wantName:    "remnanode",
+			wantRunning: false,
+			wantHealthy: "restarting",
+		},
+		{
+			name:        "Standard running container without healthcheck",
+			input:       "remnanode\tUp 4 days\tremnanode:latest",
+			wantOK:      true,
+			wantName:    "remnanode",
+			wantRunning: true,
+			wantHealthy: "running",
+		},
+		{
+			name:        "Gracefully exited container",
+			input:       "remna-migrator\tExited (0) 2 hours ago\tremnawave:latest",
+			wantOK:      true,
+			wantName:    "remna-migrator",
+			wantRunning: false,
+			wantHealthy: "stopped",
+		},
+		{
+			name:   "Invalid line (insufficient columns)",
+			input:  "invalid-line-here",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info, ok := ParseContainerLine(tt.input)
+			if ok != tt.wantOK {
+				t.Fatalf("ParseContainerLine() ok = %v, wantOK = %v", ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if info.Name != tt.wantName {
+				t.Errorf("info.Name = %q, want %q", info.Name, tt.wantName)
+			}
+			if info.Running != tt.wantRunning {
+				t.Errorf("info.Running = %v, want %v", info.Running, tt.wantRunning)
+			}
+			if info.Healthy != tt.wantHealthy {
+				t.Errorf("info.Healthy = %q, want %q", info.Healthy, tt.wantHealthy)
+			}
+		})
+	}
+}
+
+
 
 

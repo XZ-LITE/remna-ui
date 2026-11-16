@@ -4613,3 +4613,248 @@ textarea.win-input {
   align-items: center;
   justify-content: space-between;
 }
+
+/* ==========================================================================
+   Catalog Page Header & Fluent 2 Action Toolbar
+   ========================================================================== */
+.catalog-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.catalog-header-text {
+  min-width: 260px;
+  flex: 1;
+}
+
+.catalog-header-text .page-title {
+  margin-bottom: 4px;
+}
+
+.catalog-header-text .page-desc {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.catalog-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  background: var(--win-card-bg);
+  border: 1px solid var(--win-border-subtle);
+  border-radius: var(--win-radius-md, 8px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  flex-wrap: wrap;
+}
+
+.catalog-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--win-border-subtle);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Accordion Mode (Compact Server Rack Blade)
+   ========================================================================== */
+.server-item-card.collapsed {
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: all 0.22s var(--win-ease-decelerate);
+}
+
+.server-item-card.collapsed .server-item-header {
+  border-bottom: none;
+  padding: 10px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.server-item-card.collapsed:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.server-accordion-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--win-radius-sm, 4px);
+  background: transparent;
+  border: none;
+  color: var(--win-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.22s var(--win-ease-decelerate);
+  flex-shrink: 0;
+}
+
+.server-accordion-btn:hover {
+  background: var(--win-hover-subtle);
+  color: var(--win-text-primary);
+}
+
+.server-accordion-chevron {
+  transition: transform 0.22s var(--win-ease-decelerate);
+}
+
+.server-accordion-chevron.expanded {
+  transform: rotate(0deg);
+}
+
+.server-accordion-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* Micro-metrics in collapsed header */
+.server-compact-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.server-compact-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1.5px 7px;
+  border-radius: var(--win-radius-sm, 4px);
+  font-size: 11px;
+  background: var(--win-chip-bg);
+  border: 1px solid var(--win-chip-border);
+  color: var(--win-text-secondary);
+  font-family: var(--win-font-mono, monospace);
+  letter-spacing: -0.01em;
+}
+
+.server-compact-pill.ram {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.25);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.server-compact-pill.services-ok {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.25);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.server-compact-pill.services-warn {
+  color: #fb7185;
+  border-color: rgba(251, 113, 133, 0.3);
+  background: rgba(251, 113, 133, 0.1);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Docker Container Healthcheck Badges (Fluent 2)
+   ========================================================================== */
+.container-health-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2.5px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.container-health-badge.healthy {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.container-health-badge.starting {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.container-health-badge.unhealthy {
+  background: rgba(251, 113, 133, 0.15);
+  color: #fb7185;
+  border: 1px solid rgba(251, 113, 133, 0.35);
+  font-weight: 600;
+}
+
+.container-health-badge.restarting {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  font-weight: 600;
+}
+
+.container-health-badge.running {
+  background: rgba(56, 189, 248, 0.10);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+}
+
+.container-health-badge.stopped {
+  background: rgba(148, 163, 184, 0.10);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+:root[data-theme="light"] .catalog-toolbar-group {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="light"] .catalog-toolbar-divider {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] .server-item-card.collapsed {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] .server-item-card.collapsed:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .server-compact-pill {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #444444;
+}
+
+:root[data-theme="light"] .container-health-badge.healthy {
+  background: rgba(16, 124, 16, 0.08);
+  color: #107c10;
+  border-color: rgba(16, 124, 16, 0.2);
+}
+
+:root[data-theme="light"] .container-health-badge.unhealthy {
+  background: rgba(196, 43, 28, 0.08);
+  color: #c42b1c;
+  border-color: rgba(196, 43, 28, 0.25);
+}
+
+:root[data-theme="light"] .container-health-badge.starting {
+  background: rgba(157, 93, 0, 0.08);
+  color: #9d5d00;
+  border-color: rgba(157, 93, 0, 0.2);
+}
+
+:root[data-theme="light"] .container-health-badge.running {
+  background: rgba(0, 102, 204, 0.08);
+  color: #0066cc;
+  border-color: rgba(0, 102, 204, 0.2);
+}

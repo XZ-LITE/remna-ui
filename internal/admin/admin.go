@@ -726,51 +726,19 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 	// Containers
-
 	var containers []types.ContainerInfo
-
 	hasNodeContainer := false
-
 	if len(parts) >= 5 {
-
 		lines := strings.Split(strings.TrimSpace(parts[4]), "\n")
-
 		for _, l := range lines {
-
-			cols := strings.Split(l, "\t")
-
-			if len(cols) >= 3 {
-				statusLower := strings.ToLower(cols[1])
-				running := strings.HasPrefix(statusLower, "up")
-				healthy := "none"
-
-				if strings.Contains(statusLower, "(healthy)") {
-					healthy = "healthy"
-				} else if strings.Contains(statusLower, "(unhealthy)") {
-					healthy = "unhealthy"
-					running = false // Container is degraded/crashing internally
-				} else if strings.Contains(statusLower, "starting") {
-					healthy = "starting"
-				} else if strings.HasPrefix(statusLower, "restarting") {
-					healthy = "unhealthy"
-					running = false
-				}
-
-				if cols[0] == "remnanode" {
+			info, ok := ParseContainerLine(l)
+			if ok {
+				if info.Name == "remnanode" {
 					hasNodeContainer = true
 				}
-
-				containers = append(containers, types.ContainerInfo{
-					Name:    cols[0],
-					Status:  cols[1],
-					Image:   cols[2],
-					Running: running,
-					Healthy: healthy,
-				})
+				containers = append(containers, info)
 			}
-
 		}
-
 	}
 
 
@@ -889,7 +857,47 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 		LatencyMs:            latency,
 		Backups:              backups,
 	}
+}
 
+// ParseContainerLine parses a single line of `docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}'`
+// and returns normalized container health metadata.
+func ParseContainerLine(line string) (types.ContainerInfo, bool) {
+	cols := strings.Split(line, "\t")
+	if len(cols) < 3 {
+		return types.ContainerInfo{}, false
+	}
+	name := strings.TrimSpace(cols[0])
+	status := strings.TrimSpace(cols[1])
+	image := strings.TrimSpace(cols[2])
+	if name == "" {
+		return types.ContainerInfo{}, false
+	}
+
+	statusLower := strings.ToLower(status)
+	running := strings.HasPrefix(statusLower, "up")
+	healthy := "running"
+
+	if strings.Contains(statusLower, "(healthy)") {
+		healthy = "healthy"
+	} else if strings.Contains(statusLower, "(unhealthy)") {
+		healthy = "unhealthy"
+		running = false // Container is degraded or failing healthchecks
+	} else if strings.HasPrefix(statusLower, "restarting") {
+		healthy = "restarting"
+		running = false
+	} else if strings.Contains(statusLower, "starting") {
+		healthy = "starting"
+	} else if !running {
+		healthy = "stopped"
+	}
+
+	return types.ContainerInfo{
+		Name:    name,
+		Status:  status,
+		Image:   image,
+		Running: running,
+		Healthy: healthy,
+	}, true
 }
 
 
