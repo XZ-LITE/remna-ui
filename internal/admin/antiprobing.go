@@ -378,6 +378,10 @@ func DeploySelfStealDecoy(server types.SavedServer, domain string) types.Command
 			cleanDomain = server.Host
 		}
 	}
+	cleanDomain = strings.TrimSpace(cleanDomain)
+	if strings.ContainsAny(cleanDomain, "\r\n\"'`;|&$<> \t\\") {
+		return types.CommandResult{Success: false, Error: "Некорректный домен для сайта маскировки: содержит недопустимые символы"}
+	}
 
 	client, err := getSSHClient(server)
 	if err != nil {

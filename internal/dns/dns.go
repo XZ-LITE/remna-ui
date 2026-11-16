@@ -40,7 +40,7 @@ func CheckDNS(domain string) types.DNSResult {
 	defer cancel()
 
 	var resolver net.Resolver
-	ips, err := resolver.LookupIP(ctx, "ip4", clean)
+	ips, err := resolver.LookupIP(ctx, "ip", clean)
 	if err != nil || len(ips) == 0 {
 		return types.DNSResult{
 			Resolved: false,

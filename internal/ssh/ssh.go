@@ -80,7 +80,7 @@ func TestConnection(host string, port int, user, password, keyPath string) types
 		}
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
 		errStr := err.Error()
@@ -295,7 +295,7 @@ func DeployRemotely(
 		return nil, err
 	}
 
-	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), cfg)
+	client, err := ssh.Dial("tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)), cfg)
 	if err != nil {
 		emitLog("error", fmt.Sprintf("Ошибка SSH-подключения: %v", err))
 		return nil, err

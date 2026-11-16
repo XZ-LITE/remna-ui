@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"io"
+	"net"
 	"net/http"
 
 	"os"
@@ -20,9 +21,8 @@ import (
 	"regexp"
 
 	"runtime"
-
 	"strings"
-
+	"sync"
 	"syscall"
 
 	"time"
@@ -238,26 +238,18 @@ func getStorePath() string {
 
 
 
-func GetSavedServers() []types.SavedServer {
+var storeMu sync.Mutex
 
+func loadServersUnlocked() []types.SavedServer {
 	path := getStorePath()
-
 	data, err := os.ReadFile(path)
-
 	if err != nil {
-
 		return []types.SavedServer{}
-
 	}
-
 	var servers []types.SavedServer
-
 	if err := json.Unmarshal(data, &servers); err != nil {
-
 		return []types.SavedServer{}
-
 	}
-
 	for i := range servers {
 		if strings.HasPrefix(servers[i].Password, "enc:dpapi:") {
 			servers[i].Password = decryptSecret(servers[i].Password)
@@ -269,55 +261,39 @@ func GetSavedServers() []types.SavedServer {
 			servers[i].SSHKey = decryptSecret(servers[i].SSHKey)
 		}
 	}
-
 	return servers
-
 }
 
-
+func GetSavedServers() []types.SavedServer {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+	return loadServersUnlocked()
+}
 
 func SaveServer(server types.SavedServer) error {
+	storeMu.Lock()
+	defer storeMu.Unlock()
 
-	servers := GetSavedServers()
-
+	servers := loadServersUnlocked()
 	updated := false
-
 	if server.ID == "" {
-
 		server.ID = fmt.Sprintf("srv-%d", time.Now().Unix())
-
 	}
-
 	server.LastSeen = time.Now().Format("02.01.2006 15:04")
 
-
-
 	for i, s := range servers {
-
 		if s.ID == server.ID || (s.Host == server.Host && s.Port == server.Port && s.Username == server.Username) {
-
 			servers[i] = server
-
 			updated = true
-
 			break
-
 		}
-
 	}
-
 	if !updated {
-
 		servers = append(servers, server)
-
 	}
-
-
 
 	toSave := make([]types.SavedServer, len(servers))
-
 	copy(toSave, servers)
-
 	for i := range toSave {
 		if toSave[i].Password != "" && !strings.HasPrefix(toSave[i].Password, "enc:dpapi:") {
 			toSave[i].Password = encryptSecret(toSave[i].Password)
@@ -330,42 +306,26 @@ func SaveServer(server types.SavedServer) error {
 		}
 	}
 
-
-
 	data, err := json.MarshalIndent(toSave, "", "  ")
-
 	if err != nil {
-
 		return err
-
 	}
-
 	return os.WriteFile(getStorePath(), data, 0600)
-
 }
 
-
-
 func DeleteServer(id string) error {
+	storeMu.Lock()
+	defer storeMu.Unlock()
 
-	servers := GetSavedServers()
-
+	servers := loadServersUnlocked()
 	var filtered []types.SavedServer
-
 	for _, s := range servers {
-
 		if s.ID != id {
-
 			filtered = append(filtered, s)
-
 		}
-
 	}
 
-
-
 	toSave := make([]types.SavedServer, len(filtered))
-
 	copy(toSave, filtered)
 
 	for i := range toSave {
@@ -487,20 +447,14 @@ func getSSHClient(server types.SavedServer) (*ssh.Client, error) {
 
 
 	cfg := &ssh.ClientConfig{
-
 		User:            user,
-
 		Auth:            authMethods,
-
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-
 		Timeout:         8 * time.Second,
-
 	}
 
-
-
-	return ssh.Dial("tcp", fmt.Sprintf("%s:%d", server.Host, port), cfg)
+	addr := net.JoinHostPort(server.Host, fmt.Sprintf("%d", port))
+	return ssh.Dial("tcp", addr, cfg)
 
 }
 
@@ -946,6 +900,14 @@ cd /opt/remnawave/decoy 2>/dev/null && docker compose restart || true
 
 // ConfigureSubscriptionToken configures API token and URLs in /opt/remnawave/subscription/.env
 func ConfigureSubscriptionToken(server types.SavedServer, token string) types.CommandResult {
+	cleanToken := strings.TrimSpace(token)
+	if cleanToken == "" {
+		return types.CommandResult{Success: false, Error: "Токен не может быть пустым"}
+	}
+	if strings.ContainsAny(cleanToken, "\r\n\"'`;|&$<> \t\\") {
+		return types.CommandResult{Success: false, Error: "Некорректный токен: содержит недопустимые символы"}
+	}
+
 	client, err := getSSHClient(server)
 	if err != nil {
 		return types.CommandResult{Success: false, Error: err.Error()}
@@ -958,7 +920,6 @@ func ConfigureSubscriptionToken(server types.SavedServer, token string) types.Co
 	}
 	defer session.Close()
 
-	cleanToken := strings.TrimSpace(token)
 	cmd := fmt.Sprintf(`
 if [ -f /opt/remnawave/subscription/.env ]; then
   sed -i '/^REMNAWAVE_API_TOKEN=/d' /opt/remnawave/subscription/.env
@@ -2448,6 +2409,13 @@ fi
 
 
 func ConfigureRealitySelfSteal(server types.SavedServer, fallbackDomain string) types.CommandResult {
+	fallbackDomain = strings.TrimSpace(fallbackDomain)
+	if fallbackDomain == "" {
+		fallbackDomain = "127.0.0.1:8443"
+	}
+	if strings.ContainsAny(fallbackDomain, "\r\n\"'`;|&$<> \t\\") {
+		return types.CommandResult{Success: false, Error: "Некорректный адрес fallback: содержит недопустимые символы"}
+	}
 
 	client, err := getSSHClient(server)
 
