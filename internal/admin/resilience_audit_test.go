@@ -3,7 +3,6 @@ package admin
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -22,9 +21,8 @@ func TestResilience_ConcurrentStorageAccess(t *testing.T) {
 	origEnv := os.Getenv("REMNAWAVE_DATA_DIR")
 	defer os.Setenv("REMNAWAVE_DATA_DIR", origEnv)
 
-	// Set temporary subdir inside APPDATA
-	testSubDir := filepath.Base(tempDir)
-	os.Setenv("REMNAWAVE_DATA_DIR", testSubDir)
+	// Set temporary directory for isolation
+	os.Setenv("REMNAWAVE_DATA_DIR", tempDir)
 
 	var wg sync.WaitGroup
 	workers := 15

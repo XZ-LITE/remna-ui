@@ -33,6 +33,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"remna-ui/internal/generator"
 	"remna-ui/internal/types"
 
 )
@@ -219,7 +220,12 @@ func getStorePath() string {
 	if subDir == "" {
 		subDir = "remnawave"
 	}
-	dir := filepath.Join(appData, subDir)
+	var dir string
+	if filepath.IsAbs(subDir) {
+		dir = subDir
+	} else {
+		dir = filepath.Join(appData, subDir)
+	}
 	_ = os.MkdirAll(dir, 0755)
 	target := filepath.Join(dir, "servers.json")
 
@@ -502,7 +508,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 
-	cmd := `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"`
+	cmd := `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"`
 
 	out, err := session.Output(cmd)
 
@@ -741,41 +747,30 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 	// WARP active?
-
 	warpActive := false
-
 	if len(parts) >= 11 {
-
 		warpActive = strings.TrimSpace(parts[10]) == "yes"
-
 	}
 
-
+	// Performance optimized (shm_size 512mb & valkey socket)?
+	performanceOptimized := false
+	if len(parts) >= 12 {
+		performanceOptimized = strings.TrimSpace(parts[11]) == "yes"
+	}
 
 	return types.ServerStatusResult{
-
-		Success:             true,
-
-		HostInfo:            hostInfo,
-
-		Metrics:             metrics,
-
-		Containers:          containers,
-
-		BBRActive:           bbrActive,
-
-		DockerMirrorsActive: dockerMirrorsActive,
-
-		AntiAbuseActive:     antiAbuseActive,
-
-		WarpActive:          warpActive,
-
-		NodePresent:         nodePresent,
-
-		LatencyMs:           latency,
-
-		Backups:             backups,
-
+		Success:              true,
+		HostInfo:             hostInfo,
+		Metrics:              metrics,
+		Containers:           containers,
+		BBRActive:            bbrActive,
+		DockerMirrorsActive:  dockerMirrorsActive,
+		AntiAbuseActive:      antiAbuseActive,
+		WarpActive:           warpActive,
+		PerformanceOptimized: performanceOptimized,
+		NodePresent:          nodePresent,
+		LatencyMs:            latency,
+		Backups:              backups,
 	}
 
 }
@@ -1907,6 +1902,86 @@ echo "Защита от торрентов и спама отключена."
 
 	return types.CommandResult{Success: true, Output: resStr}
 
+}
+
+// ToggleStackPerformance enables or disables performance optimizations:
+// Valkey Unix Domain Socket, PostgreSQL 512MB shared memory, ulimits 1M, and Linux kernel sysctl memory tuning.
+func ToggleStackPerformance(server types.SavedServer, enable bool) types.CommandResult {
+	client, err := getSSHClient(server)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: "Ошибка подключения SSH: " + err.Error()}
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return types.CommandResult{Success: false, Error: "Ошибка создания сессии SSH: " + err.Error()}
+	}
+	defer session.Close()
+
+	var composeContent string
+	var sysctlScript string
+	var successMsg string
+
+	if enable {
+		composeContent = generator.RenderPanelCompose()
+		sysctlScript = `
+echo "==> Применение оптимизации ядра Linux (Host RAM sysctl)..."
+cat > /etc/sysctl.d/99-remnawave-ram.conf <<'EOF'
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+vm.dirty_ratio=15
+vm.dirty_background_ratio=5
+EOF
+sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remnawave-ram.conf >/dev/null 2>&1 || true
+`
+		successMsg = "Оптимизация RAM и сокетов успешно включена (512MB RAM + Unix Sockets)!"
+	} else {
+		composeContent = generator.RenderPanelComposeStandard()
+		sysctlScript = `
+echo "==> Откат системных параметров ядра Linux к стандартным..."
+rm -f /etc/sysctl.d/99-remnawave-ram.conf
+sysctl -w vm.swappiness=60 vm.vfs_cache_pressure=100 vm.dirty_ratio=20 vm.dirty_background_ratio=10 >/dev/null 2>&1 || true
+`
+		successMsg = "Оптимизация успешно отключена, настройки возвращены к стандартным!"
+	}
+
+	b64Compose := base64.StdEncoding.EncodeToString([]byte(composeContent))
+
+	script := fmt.Sprintf(`
+%s
+
+if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+  echo "==> Обновление конфигурации /opt/remnawave/panel/docker-compose.yml..."
+  cp -f /opt/remnawave/panel/docker-compose.yml /opt/remnawave/panel/docker-compose.yml.bak 2>/dev/null || true
+  echo '%s' | base64 -d > /opt/remnawave/panel/docker-compose.yml
+  cd /opt/remnawave/panel && docker compose up -d --remove-orphans
+  echo "SUCCESS_APPLIED"
+elif [ -f /opt/remnawave/docker-compose.yml ]; then
+  echo "==> Обновление конфигурации /opt/remnawave/docker-compose.yml..."
+  cp -f /opt/remnawave/docker-compose.yml /opt/remnawave/docker-compose.yml.bak 2>/dev/null || true
+  echo '%s' | base64 -d > /opt/remnawave/docker-compose.yml
+  cd /opt/remnawave && docker compose up -d --remove-orphans
+  echo "SUCCESS_APPLIED"
+else
+  echo "ERR_NO_PANEL_COMPOSE: Каталог панели Remnawave не обнаружен на данном сервере."
+  exit 1
+fi
+`, sysctlScript, b64Compose, b64Compose)
+
+	out, err := session.CombinedOutput(script)
+	resStr := strings.TrimSpace(string(out))
+	if err != nil {
+		if strings.Contains(resStr, "ERR_NO_PANEL_COMPOSE") {
+			return types.CommandResult{
+				Success: false,
+				Error:   "Не удалось применить оптимизацию: на этом сервере не обнаружена мастер-панель Remnawave.",
+			}
+		}
+		return types.CommandResult{Success: false, Error: resStr}
+	}
+
+	return types.CommandResult{Success: true, Output: successMsg}
 }
 
 

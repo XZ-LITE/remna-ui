@@ -116,6 +116,10 @@ func RenderPanelCompose() string {
     container_name: remnawave
     hostname: remnawave
     restart: always
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
     environment:
       - NODE_OPTIONS=--max-old-space-size=512
     ports:
@@ -149,7 +153,132 @@ func RenderPanelCompose() string {
     container_name: remnawave-db
     hostname: remnawave-db
     restart: always
-    shm_size: 256mb
+    shm_size: 512mb
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - TZ=UTC
+    networks:
+      - remnawave-network
+    ports:
+      - 127.0.0.1:6767:5432
+    volumes:
+      - remnawave-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} || pg_isready -h localhost || pg_isready']
+      interval: 3s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  remnawave-redis:
+    image: valkey/valkey:9-alpine
+    container_name: remnawave-redis
+    hostname: remnawave-redis
+    restart: always
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    command:
+      - valkey-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - "256mb"
+      - --maxmemory-policy
+      - "allkeys-lru"
+      - --loglevel
+      - warning
+      - --unixsocket
+      - /var/run/valkey/valkey.sock
+      - --unixsocketperm
+      - "777"
+      - --port
+      - "0"
+    networks:
+      - remnawave-network
+    volumes:
+      - valkey-socket:/var/run/valkey
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-s", "/var/run/valkey/valkey.sock", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  remnawave-db-data:
+    name: remnawave-db-data
+    driver: local
+    external: false
+  valkey-socket:
+    name: valkey-socket
+    driver: local
+    external: false
+
+networks:
+  remnawave-network:
+    name: remnawave-network
+    driver: bridge
+    external: false
+`
+}
+
+func RenderPanelComposeStandard() string {
+	return `services:
+  remnawave:
+    image: remnawave/backend:3
+    container_name: remnawave
+    hostname: remnawave
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
+    env_file:
+      - .env
+    networks:
+      - remnawave-network
+    depends_on:
+      remnawave-db:
+        condition: service_healthy
+      remnawave-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  remnawave-db:
+    image: postgres:18.4
+    container_name: remnawave-db
+    hostname: remnawave-db
+    restart: always
     env_file:
       - .env
     environment:
@@ -186,22 +315,12 @@ func RenderPanelCompose() string {
       - ""
       - --appendonly
       - "no"
-      - --maxmemory-policy
-      - noeviction
       - --loglevel
       - warning
-      - --unixsocket
-      - /var/run/valkey/valkey.sock
-      - --unixsocketperm
-      - "777"
-      - --port
-      - "0"
     networks:
       - remnawave-network
-    volumes:
-      - valkey-socket:/var/run/valkey
     healthcheck:
-      test: ["CMD", "valkey-cli", "-s", "/var/run/valkey/valkey.sock", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 3s
       timeout: 5s
       retries: 5
@@ -214,10 +333,6 @@ func RenderPanelCompose() string {
 volumes:
   remnawave-db-data:
     name: remnawave-db-data
-    driver: local
-    external: false
-  valkey-socket:
-    name: valkey-socket
     driver: local
     external: false
 
@@ -431,6 +546,7 @@ func RenderCaddyfile(domain, subDomain string, subEnabled bool, secretGate strin
 	if subEnabled && cleanSub != "" && cleanSub != cleanDomain {
 		subBlock = fmt.Sprintf(`
 %s {
+    encode zstd gzip
     reverse_proxy remnawave-subscription-page:3010
 }
 `, cleanSub)
@@ -438,6 +554,7 @@ func RenderCaddyfile(domain, subDomain string, subEnabled bool, secretGate strin
 
 	if secretGate == "" {
 		return fmt.Sprintf(`%s {
+    encode zstd gzip
     reverse_proxy remnawave:3000
 }
 %s`, cleanDomain, subBlock)
@@ -451,6 +568,8 @@ func RenderCaddyfile(domain, subDomain string, subEnabled bool, secretGate strin
 	}
 
 	return fmt.Sprintf(`%s {
+    encode zstd gzip
+
     @gate_entry path /%s
     handle @gate_entry {
         header Set-Cookie "remna_gate=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400; Secure"

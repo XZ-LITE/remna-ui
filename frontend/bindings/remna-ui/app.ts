@@ -228,6 +228,12 @@ export function ToggleAntiAbuse(server: types$0.SavedServer, enable: boolean): $
     });
 }
 
+export function ToggleStackPerformance(server: types$0.SavedServer, enable: boolean): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(2109541851, server, enable).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function UninstallStack(server: types$0.SavedServer, purgeData: boolean): $CancellablePromise<types$0.CommandResult> {
     return $Call.ByID(1266331323, server, purgeData).then(($result: any) => {
         return $$createType0($result);

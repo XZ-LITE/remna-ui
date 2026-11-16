@@ -132,6 +132,7 @@ type ServerStatusResult struct {
 	DockerMirrorsActive bool            `json:"docker_mirrors_active"`
 	AntiAbuseActive     bool            `json:"anti_abuse_active"`
 	WarpActive          bool            `json:"warp_active"`
+	PerformanceOptimized bool           `json:"performance_optimized"`
 	NodePresent         bool            `json:"node_present"`
 	LatencyMs           int             `json:"latency_ms"`
 	Backups             []BackupInfo    `json:"backups"`

@@ -145,6 +145,10 @@ func (a *App) ToggleAntiAbuse(server types.SavedServer, enable bool) types.Comma
 	return admin.ToggleAntiAbuse(server, enable)
 }
 
+func (a *App) ToggleStackPerformance(server types.SavedServer, enable bool) types.CommandResult {
+	return admin.ToggleStackPerformance(server, enable)
+}
+
 func (a *App) TestPanelAPI(panelURL, apiToken string) types.PanelInfoResult {
 	return remnawave.TestPanelAPI(panelURL, apiToken)
 }

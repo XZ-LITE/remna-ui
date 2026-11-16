@@ -945,6 +945,7 @@ export class ServerStatusResult {
     "docker_mirrors_active": boolean;
     "anti_abuse_active": boolean;
     "warp_active": boolean;
+    "performance_optimized": boolean;
     "node_present": boolean;
     "latency_ms": number;
     "backups": BackupInfo[];
@@ -976,6 +977,9 @@ export class ServerStatusResult {
         if (!("warp_active" in $$source)) {
             this["warp_active"] = false;
         }
+        if (!("performance_optimized" in $$source)) {
+            this["performance_optimized"] = false;
+        }
         if (!("node_present" in $$source)) {
             this["node_present"] = false;
         }
@@ -998,7 +1002,7 @@ export class ServerStatusResult {
     static createFrom($$source: any = {}): ServerStatusResult {
         const $$createField2_0 = $$createType1;
         const $$createField3_0 = $$createType3;
-        const $$createField10_0 = $$createType5;
+        const $$createField11_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("metrics" in $$parsedSource) {
             $$parsedSource["metrics"] = $$createField2_0($$parsedSource["metrics"]);
@@ -1007,7 +1011,7 @@ export class ServerStatusResult {
             $$parsedSource["containers"] = $$createField3_0($$parsedSource["containers"]);
         }
         if ("backups" in $$parsedSource) {
-            $$parsedSource["backups"] = $$createField10_0($$parsedSource["backups"]);
+            $$parsedSource["backups"] = $$createField11_0($$parsedSource["backups"]);
         }
         return new ServerStatusResult($$parsedSource as Partial<ServerStatusResult>);
     }

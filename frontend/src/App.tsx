@@ -159,6 +159,7 @@ const {
   ResetSuperadmin,
   RenewSSL,
   ToggleAntiAbuse,
+  ToggleStackPerformance,
   InstallCloudflareWARP,
   ConfigureRealitySelfSteal,
   TestPanelAPI,
@@ -2298,14 +2299,28 @@ export function App() {
       addToast("error", `Сбой: ${e}`);
 
     } finally {
-
       setActionLoading((prev) => ({ ...prev, [key]: false }));
-
     }
-
   };
 
-
+  // Toggle Performance Optimization (Unix Sockets & 512MB RAM)
+  const handleTogglePerformance = async (srv: types.SavedServer, currentOptimized: boolean) => {
+    const key = `perf-toggle-${srv.id}`;
+    setActionLoading((prev) => ({ ...prev, [key]: true }));
+    try {
+      const res = await ToggleStackPerformance(srv, !currentOptimized);
+      if (res.success) {
+        addToast("success", res.output || "Режим производительности успешно изменен!");
+        handleInspectServer(srv);
+      } else {
+        addToast("error", `Ошибка: ${res.error}`);
+      }
+    } catch (e: any) {
+      addToast("error", `Сбой: ${e}`);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [key]: false }));
+    }
+  };
 
   // Cloudflare WARP Outbound Setup
 
@@ -6310,6 +6325,17 @@ export function App() {
                                             <Zap size={14} />
                                             <span>{status?.bbr_active ? "BBR уже настроен" : "Включить BBR"}</span>
                                           </button>
+                                          <button
+                                            className="server-menu-item"
+                                            onClick={() => {
+                                              setActiveServerMenu(null);
+                                              handleTogglePerformance(srv, !!status?.performance_optimized);
+                                            }}
+                                            disabled={actionLoading[`perf-toggle-${srv.id}`]}
+                                          >
+                                            <Cpu size={14} style={{ color: "#a855f7" }} />
+                                            <span>{status?.performance_optimized ? "Отключить RAM Boost" : "RAM Boost & Sockets"}</span>
+                                          </button>
                                         </>
                                       ) : (
                                         <>
@@ -6470,6 +6496,13 @@ export function App() {
                                   <span className="server-chip bbr" title="Google BBR ускорение сети включено">
                                     <Zap size={11} />
                                     <span>BBR</span>
+                                  </span>
+                                ) : null}
+
+                                {status?.performance_optimized ? (
+                                  <span className="server-chip bbr" style={{ background: "rgba(168, 85, 247, 0.15)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)" }} title="Оптимизация RAM (512MB) и Unix сокетов Valkey активна">
+                                    <Cpu size={11} />
+                                    <span>RAM 512M</span>
                                   </span>
                                 ) : null}
                               </div>
@@ -7041,6 +7074,37 @@ export function App() {
                                     >
                                       {actionLoading[`bbr-${srv.id}`] ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
                                       <span>{status?.bbr_active ? "BBR активен" : "Включить BBR"}</span>
+                                    </button>
+                                  </div>
+
+                                  {/* RAM & Unix Sockets Performance Optimization */}
+                                  <div className="tool-card" style={{ padding: "12px 14px" }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                        <Cpu size={15} style={{ color: "#c084fc" }} />
+                                        <span style={{ fontWeight: 600, fontSize: "13px" }}>RAM Boost & Sockets</span>
+                                      </div>
+                                      <span className={`tool-badge-status ${status?.performance_optimized ? "active" : "inactive"}`}>
+                                        {status?.performance_optimized ? "512MB + Sockets" : "Стандартный"}
+                                      </span>
+                                    </div>
+                                    <p style={{ fontSize: "12px", color: "var(--win-text-secondary)", margin: "0 0 10px 0", lineHeight: 1.4 }}>
+                                      Valkey через Unix Domain Socket, 512MB shared memory для Postgres, ulimits 1M и тюнинг swappiness ядра Linux.
+                                    </p>
+                                    <button
+                                      className={`win-button ${status?.performance_optimized ? "" : "hero-primary"}`}
+                                      style={{ width: "100%", justifyContent: "center", height: "28px", fontSize: "12px" }}
+                                      disabled={actionLoading[`perf-toggle-${srv.id}`]}
+                                      onClick={() => handleTogglePerformance(srv, !!status?.performance_optimized)}
+                                    >
+                                      {actionLoading[`perf-toggle-${srv.id}`] ? (
+                                        <RefreshCw size={12} className="animate-spin" />
+                                      ) : status?.performance_optimized ? (
+                                        <RotateCcw size={12} />
+                                      ) : (
+                                        <Zap size={12} />
+                                      )}
+                                      <span>{status?.performance_optimized ? "Вернуть стандартный режим" : "Включить RAM Boost"}</span>
                                     </button>
                                   </div>
                                 </div>
