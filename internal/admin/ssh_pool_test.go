@@ -37,6 +37,7 @@ func TestSSHPool_ConcurrentMapAccess(t *testing.T) {
 				sshPool["test-key"] = &pooledSSHClient{
 					client:   nil,
 					lastUsed: time.Now(),
+					inUse:    j % 3,
 				}
 				_ = sshPool["test-key"]
 				sshPoolMu.Unlock()

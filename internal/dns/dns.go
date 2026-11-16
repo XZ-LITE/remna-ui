@@ -59,7 +59,7 @@ func CheckDNS(domain string) types.DNSResult {
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 				d := net.Dialer{Timeout: 1500 * time.Millisecond}
-				return d.DialContext(ctx, "udp", dnsServer)
+				return d.DialContext(ctx, network, dnsServer)
 			},
 		}
 		fbIPs, fbErr := customResolver.LookupIP(ctxFb, "ip", clean)

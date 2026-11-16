@@ -465,10 +465,11 @@ func getSSHClient(server types.SavedServer) (*ssh.Client, error) {
 
 }
 
-// pooledSSHClient holds a cached SSH client and its last activity timestamp
+// pooledSSHClient holds a cached SSH client, its last activity timestamp, and in-use reference count
 type pooledSSHClient struct {
 	client   *ssh.Client
 	lastUsed time.Time
+	inUse    int
 }
 
 var (
@@ -477,14 +478,14 @@ var (
 )
 
 func init() {
-	// Background reaper: cleans up idle SSH connections older than 45 seconds
+	// Background reaper: cleans up idle SSH connections older than 45 seconds that are not actively in-use
 	go func() {
 		ticker := time.NewTicker(20 * time.Second)
 		for range ticker.C {
 			sshPoolMu.Lock()
 			now := time.Now()
 			for k, entry := range sshPool {
-				if now.Sub(entry.lastUsed) > 45*time.Second {
+				if entry.inUse == 0 && now.Sub(entry.lastUsed) > 45*time.Second {
 					if entry.client != nil {
 						entry.client.Close()
 					}
@@ -508,9 +509,9 @@ func getSSHKey(server types.SavedServer) string {
 	return fmt.Sprintf("%s:%d:%s", server.Host, port, user)
 }
 
-// getPooledSession returns an active SSH session from a pooled, keepalive-verified SSH client.
-// If no client exists or the connection was severed, a fresh client is dialed and stored in the pool.
-func getPooledSession(server types.SavedServer) (*ssh.Session, error) {
+// getPooledSession returns an active SSH session from a pooled, keepalive-verified SSH client,
+// along with a release function that must be deferred by the caller to return the connection to the idle pool.
+func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	key := getSSHKey(server)
 
 	sshPoolMu.Lock()
@@ -520,40 +521,69 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, error) {
 		if err == nil {
 			session, sessErr := entry.client.NewSession()
 			if sessErr == nil {
+				entry.inUse++
 				entry.lastUsed = time.Now()
 				sshPoolMu.Unlock()
-				return session, nil
+				release := func() {
+					session.Close()
+					sshPoolMu.Lock()
+					if e, ok := sshPool[key]; ok {
+						e.inUse--
+						if e.inUse < 0 {
+							e.inUse = 0
+						}
+						e.lastUsed = time.Now()
+					}
+					sshPoolMu.Unlock()
+				}
+				return session, release, nil
 			}
 		}
-		// Connection failed or session cannot be opened; clean up stale client
-		entry.client.Close()
-		delete(sshPool, key)
+		// Connection failed or session cannot be opened; clean up stale client if not currently in use
+		if entry.inUse == 0 {
+			entry.client.Close()
+			delete(sshPool, key)
+		}
 	}
 	sshPoolMu.Unlock()
 
 	// Dial fresh client outside of global lock to prevent blocking concurrent dials to different hosts
 	newClient, err := getSSHClient(server)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	session, err := newClient.NewSession()
 	if err != nil {
 		newClient.Close()
-		return nil, err
+		return nil, nil, err
 	}
 
 	sshPoolMu.Lock()
-	if old, exists := sshPool[key]; exists && old.client != nil {
+	if old, exists := sshPool[key]; exists && old.client != nil && old.inUse == 0 {
 		old.client.Close()
 	}
 	sshPool[key] = &pooledSSHClient{
 		client:   newClient,
 		lastUsed: time.Now(),
+		inUse:    1,
 	}
 	sshPoolMu.Unlock()
 
-	return session, nil
+	release := func() {
+		session.Close()
+		sshPoolMu.Lock()
+		if e, ok := sshPool[key]; ok {
+			e.inUse--
+			if e.inUse < 0 {
+				e.inUse = 0
+			}
+			e.lastUsed = time.Now()
+		}
+		sshPoolMu.Unlock()
+	}
+
+	return session, release, nil
 }
 
 
@@ -570,7 +600,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 	start := time.Now()
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -584,7 +614,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -876,7 +906,7 @@ func RestartContainer(server types.SavedServer, container string) types.CommandR
 
 
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -884,7 +914,7 @@ func RestartContainer(server types.SavedServer, container string) types.CommandR
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -904,7 +934,7 @@ func RestartContainer(server types.SavedServer, container string) types.CommandR
 
 func RestartAllStack(server types.SavedServer) types.CommandResult {
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -912,7 +942,7 @@ func RestartAllStack(server types.SavedServer) types.CommandResult {
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -1109,7 +1139,7 @@ func GetContainerLogs(server types.SavedServer, container string) string {
 
 
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1117,7 +1147,7 @@ func GetContainerLogs(server types.SavedServer, container string) string {
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -1305,7 +1335,7 @@ docker compose ps
 
 func OptimizeNetworkBBR(server types.SavedServer) types.CommandResult {
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1313,7 +1343,7 @@ func OptimizeNetworkBBR(server types.SavedServer) types.CommandResult {
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -1363,7 +1393,7 @@ echo "Google BBR активен ($CURRENT), очередь fq включена!"
 
 func ConfigureDockerMirrors(server types.SavedServer) types.CommandResult {
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1371,7 +1401,7 @@ func ConfigureDockerMirrors(server types.SavedServer) types.CommandResult {
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -1741,7 +1771,7 @@ fi
 
 func ToggleAntiAbuse(server types.SavedServer, enable bool) types.CommandResult {
 
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1749,7 +1779,7 @@ func ToggleAntiAbuse(server types.SavedServer, enable bool) types.CommandResult 
 
 	}
 
-	defer session.Close()
+	defer release()
 
 
 
@@ -1922,11 +1952,11 @@ echo "Защита от торрентов и спама отключена."
 // ToggleStackPerformance enables or disables performance optimizations:
 // Valkey Unix Domain Socket, PostgreSQL 512MB shared memory, ulimits 1M, and Linux kernel sysctl memory tuning.
 func ToggleStackPerformance(server types.SavedServer, enable bool) types.CommandResult {
-	session, err := getPooledSession(server)
+	session, release, err := getPooledSession(server)
 	if err != nil {
 		return types.CommandResult{Success: false, Error: "Ошибка подключения SSH: " + err.Error()}
 	}
-	defer session.Close()
+	defer release()
 
 	var composeContent string
 	var sysctlScript string
