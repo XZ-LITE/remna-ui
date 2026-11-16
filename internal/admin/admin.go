@@ -1921,6 +1921,7 @@ func ToggleStackPerformance(server types.SavedServer, enable bool) types.Command
 
 	var composeContent string
 	var sysctlScript string
+	var envUpdateScript string
 	var successMsg string
 
 	if enable {
@@ -1935,6 +1936,15 @@ vm.dirty_background_ratio=5
 EOF
 sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remnawave-ram.conf >/dev/null 2>&1 || true
 `
+		envUpdateScript = `
+if [ -f "$TARGET_DIR/.env" ]; then
+  if grep -q "REDIS_SOCKET=" "$TARGET_DIR/.env" 2>/dev/null; then
+    sed -i 's|^#*REDIS_SOCKET=.*|REDIS_SOCKET=/var/run/valkey/valkey.sock|' "$TARGET_DIR/.env"
+  else
+    echo "REDIS_SOCKET=/var/run/valkey/valkey.sock" >> "$TARGET_DIR/.env"
+  fi
+fi
+`
 		successMsg = "Оптимизация RAM и сокетов успешно включена (512MB RAM + Unix Sockets)!"
 	} else {
 		composeContent = generator.RenderPanelComposeStandard()
@@ -1942,6 +1952,13 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remnawave-ram.conf
 echo "==> Откат системных параметров ядра Linux к стандартным..."
 rm -f /etc/sysctl.d/99-remnawave-ram.conf
 sysctl -w vm.swappiness=60 vm.vfs_cache_pressure=100 vm.dirty_ratio=20 vm.dirty_background_ratio=10 >/dev/null 2>&1 || true
+`
+		envUpdateScript = `
+if [ -f "$TARGET_DIR/.env" ]; then
+  sed -i 's|^REDIS_SOCKET=.*|#REDIS_SOCKET=|' "$TARGET_DIR/.env" 2>/dev/null || true
+  grep -q "REDIS_HOST=" "$TARGET_DIR/.env" 2>/dev/null || echo "REDIS_HOST=remnawave-redis" >> "$TARGET_DIR/.env"
+  grep -q "REDIS_PORT=" "$TARGET_DIR/.env" 2>/dev/null || echo "REDIS_PORT=6379" >> "$TARGET_DIR/.env"
+fi
 `
 		successMsg = "Оптимизация успешно отключена, настройки возвращены к стандартным!"
 	}
@@ -1952,22 +1969,23 @@ sysctl -w vm.swappiness=60 vm.vfs_cache_pressure=100 vm.dirty_ratio=20 vm.dirty_
 %s
 
 if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
-  echo "==> Обновление конфигурации /opt/remnawave/panel/docker-compose.yml..."
-  cp -f /opt/remnawave/panel/docker-compose.yml /opt/remnawave/panel/docker-compose.yml.bak 2>/dev/null || true
-  echo '%s' | base64 -d > /opt/remnawave/panel/docker-compose.yml
-  cd /opt/remnawave/panel && docker compose up -d --remove-orphans
-  echo "SUCCESS_APPLIED"
+  TARGET_DIR="/opt/remnawave/panel"
 elif [ -f /opt/remnawave/docker-compose.yml ]; then
-  echo "==> Обновление конфигурации /opt/remnawave/docker-compose.yml..."
-  cp -f /opt/remnawave/docker-compose.yml /opt/remnawave/docker-compose.yml.bak 2>/dev/null || true
-  echo '%s' | base64 -d > /opt/remnawave/docker-compose.yml
-  cd /opt/remnawave && docker compose up -d --remove-orphans
-  echo "SUCCESS_APPLIED"
+  TARGET_DIR="/opt/remnawave"
 else
   echo "ERR_NO_PANEL_COMPOSE: Каталог панели Remnawave не обнаружен на данном сервере."
   exit 1
 fi
-`, sysctlScript, b64Compose, b64Compose)
+
+echo "==> Обновление конфигурации $TARGET_DIR/docker-compose.yml..."
+cp -f "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak" 2>/dev/null || true
+echo '%s' | base64 -d > "$TARGET_DIR/docker-compose.yml"
+
+%s
+
+cd "$TARGET_DIR" && docker compose up -d --remove-orphans
+echo "SUCCESS_APPLIED"
+`, sysctlScript, b64Compose, envUpdateScript)
 
 	out, err := session.CombinedOutput(script)
 	resStr := strings.TrimSpace(string(out))

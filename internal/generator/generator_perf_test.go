@@ -23,6 +23,9 @@ func TestGenerator_PerformanceTemplates(t *testing.T) {
 	if !strings.Contains(optCompose, "ulimits:") || !strings.Contains(optCompose, "1048576") {
 		t.Errorf("RenderPanelCompose missing 1M ulimits nofile")
 	}
+	if !strings.Contains(optCompose, "REDIS_SOCKET=/var/run/valkey/valkey.sock") {
+		t.Errorf("RenderPanelCompose missing REDIS_SOCKET environment variable")
+	}
 
 	// 2. Verify Standard Compose (Rollback)
 	stdCompose := RenderPanelComposeStandard()
@@ -31,6 +34,9 @@ func TestGenerator_PerformanceTemplates(t *testing.T) {
 	}
 	if strings.Contains(stdCompose, "/var/run/valkey/valkey.sock") {
 		t.Errorf("RenderPanelComposeStandard must not contain unix socket path")
+	}
+	if !strings.Contains(stdCompose, "REDIS_HOST=remnawave-redis") || !strings.Contains(stdCompose, "REDIS_PORT=6379") {
+		t.Errorf("RenderPanelComposeStandard missing standard REDIS_HOST/PORT fallback")
 	}
 	if !strings.Contains(stdCompose, "valkey-server") {
 		t.Errorf("RenderPanelComposeStandard missing valkey-server command")

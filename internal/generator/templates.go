@@ -122,6 +122,7 @@ func RenderPanelCompose() string {
         hard: 1048576
     environment:
       - NODE_OPTIONS=--max-old-space-size=512
+      - REDIS_SOCKET=/var/run/valkey/valkey.sock
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:3001:3001"
@@ -250,6 +251,9 @@ func RenderPanelComposeStandard() string {
     container_name: remnawave
     hostname: remnawave
     restart: always
+    environment:
+      - REDIS_HOST=remnawave-redis
+      - REDIS_PORT=6379
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:3001:3001"
@@ -1189,6 +1193,7 @@ func RenderAllInOneStealthCompose(appSecret, dbPass, metricsPass, apiToken, secr
     restart: always
     environment:
       - NODE_OPTIONS=--max-old-space-size=512
+      - REDIS_SOCKET=/var/run/valkey/valkey.sock
     ports:
       - '127.0.0.1:3000:3000'
       - '127.0.0.1:3001:3001'

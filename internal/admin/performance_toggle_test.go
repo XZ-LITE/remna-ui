@@ -20,6 +20,9 @@ func TestPerformance_ToggleScriptsAndPayload(t *testing.T) {
 	if !strings.Contains(string(decodedOpt), "shm_size: 512mb") {
 		t.Errorf("Decoded optimized compose missing shm_size: 512mb")
 	}
+	if !strings.Contains(string(decodedOpt), "REDIS_SOCKET=/var/run/valkey/valkey.sock") {
+		t.Errorf("Decoded optimized compose missing REDIS_SOCKET=/var/run/valkey/valkey.sock")
+	}
 
 	// 2. Verify Standard Payload Base64
 	stdCompose := generator.RenderPanelComposeStandard()
@@ -30,6 +33,9 @@ func TestPerformance_ToggleScriptsAndPayload(t *testing.T) {
 	}
 	if strings.Contains(string(decodedStd), "shm_size: 512mb") {
 		t.Errorf("Decoded standard compose should not contain shm_size: 512mb")
+	}
+	if !strings.Contains(string(decodedStd), "REDIS_HOST=remnawave-redis") || !strings.Contains(string(decodedStd), "REDIS_PORT=6379") {
+		t.Errorf("Decoded standard compose missing standard TCP REDIS_HOST/PORT fallback")
 	}
 
 	// 3. Verify Error on unreachable server
