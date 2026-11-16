@@ -1608,9 +1608,11 @@ export function App() {
 
   // Inspect Server Containers & Metrics
 
-  const handleInspectServer = async (srv: types.SavedServer) => {
+  const handleInspectServer = async (srv: types.SavedServer, silentToast: boolean = false): Promise<boolean> => {
 
     setServerLoading((prev) => ({ ...prev, [srv.id]: true }));
+
+    let isSuccess = false;
 
     try {
 
@@ -1618,13 +1620,19 @@ export function App() {
 
       setServerStatus((prev) => ({ ...prev, [srv.id]: res }));
 
-      if (res.success) {
+      isSuccess = Boolean(res.success);
 
-        addToast("info", `Статус ${srv.label || srv.host} обновлен (Онлайн)`);
+      if (!silentToast) {
 
-      } else {
+        if (res.success) {
 
-        addToast("error", `Сервер недоступен: ${res.error}`);
+          addToast("info", `Статус ${srv.label || srv.host} обновлен (Онлайн)`);
+
+        } else {
+
+          addToast("error", `Сервер недоступен: ${res.error}`);
+
+        }
 
       }
 
@@ -1646,18 +1654,73 @@ export function App() {
 
       }));
 
+      if (!silentToast) {
+
+        addToast("error", `Сервер недоступен: ${e}`);
+
+      }
+
     } finally {
 
       setServerLoading((prev) => ({ ...prev, [srv.id]: false }));
 
     }
 
+    return isSuccess;
+
   };
 
-  // High-performance parallel inspection of all saved servers
+  // Resilient batched inspection of all saved servers with concurrency limit
   const handleInspectAllServers = useCallback(async () => {
+
     if (savedServers.length === 0) return;
-    await Promise.allSettled(savedServers.map((s) => handleInspectServer(s)));
+
+    const concurrency = 4;
+
+    let onlineCount = 0;
+
+    let offlineCount = 0;
+
+    for (let i = 0; i < savedServers.length; i += concurrency) {
+
+      const chunk = savedServers.slice(i, i + concurrency);
+
+      const results = await Promise.allSettled(
+
+        chunk.map((s) => handleInspectServer(s, true))
+
+      );
+
+      for (const res of results) {
+
+        if (res.status === "fulfilled" && res.value === true) {
+
+          onlineCount++;
+
+        } else {
+
+          offlineCount++;
+
+        }
+
+      }
+
+    }
+
+    if (offlineCount === 0) {
+
+      addToast("success", `Опрос завершен: все серверы (${onlineCount}) в сети`);
+
+    } else if (onlineCount === 0) {
+
+      addToast("error", `Опрос завершен: все серверы (${offlineCount}) недоступны`);
+
+    } else {
+
+      addToast("info", `Опрос завершен: ${onlineCount} в сети, ${offlineCount} недоступно`);
+
+    }
+
   }, [savedServers, sshPass]);
 
 

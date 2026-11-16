@@ -568,12 +568,12 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 		req.Name = fmt.Sprintf("Node-%s-%d", req.Country, req.Port)
 	}
 
-	// Self-healing: check if a stale/disconnected node with this IP address already exists in panel
+	// Self-healing: check if stale/disconnected nodes with this IP address already exist in panel
 	existingNodes, errGet := GetNodes(targetURL, cleanToken)
 	if errGet == nil {
 		for _, n := range existingNodes {
 			if strings.TrimSpace(n.Address) == strings.TrimSpace(req.Address) {
-				// Clean up orphaned/disconnected node entry so a fresh node with a valid SECRET_KEY can be registered
+				// Clean up all orphaned/disconnected duplicate node entries so a fresh node with a valid SECRET_KEY can be registered
 				delReq, errDel := http.NewRequest("DELETE", fmt.Sprintf("%s/api/nodes/%s", targetURL, n.UUID), nil)
 				if errDel == nil {
 					delReq.Header.Set("Authorization", "Bearer "+cleanToken)
@@ -582,7 +582,6 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 						delResp.Body.Close()
 					}
 				}
-				break
 			}
 		}
 	}

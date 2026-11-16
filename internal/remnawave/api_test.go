@@ -482,3 +482,81 @@ func TestCreateNodeInPanel_CustomMode(t *testing.T) {
 		t.Errorf("expected VIP squad to be updated")
 	}
 }
+
+func TestCreateNodeInPanel_DeletesAllDuplicates(t *testing.T) {
+	deletedUUIDs := make(map[string]bool)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/nodes" {
+			// Return two duplicate nodes with the same address
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"uuid": "node-dupe-1", "name": "Node 1", "address": "192.168.1.50", "port": 2222},
+				{"uuid": "node-dupe-2", "name": "Node 2", "address": "192.168.1.50", "port": 2222},
+				{"uuid": "node-other", "name": "Node 3", "address": "10.0.0.1", "port": 2222},
+			})
+			return
+		}
+		if r.Method == http.MethodDelete {
+			if strings.HasPrefix(r.URL.Path, "/api/nodes/") {
+				uuid := strings.TrimPrefix(r.URL.Path, "/api/nodes/")
+				deletedUUIDs[uuid] = true
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]any{"success": true})
+				return
+			}
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/config-profiles" {
+			json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"uuid": "prof-1",
+					"inbounds": []map[string]any{
+						{"uuid": "inb-1", "tag": "VLESS-Reality", "protocol": "vless"},
+					},
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/nodes" {
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]any{
+				"response": map[string]any{
+					"uuid":      "new-node-uuid",
+					"secretKey": "KEY_12345",
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/hosts" {
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]any{"success": true})
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/internal-squads" {
+			json.NewEncoder(w).Encode([]any{})
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	req := types.CreateNodeRequest{
+		Name:    "Clean Node",
+		Country: "DE",
+		Address: "192.168.1.50",
+		Port:    2222,
+	}
+
+	resp := CreateNodeInPanel(server.URL, "token", req)
+	if !resp.Success {
+		t.Fatalf("expected success, got error: %s", resp.Error)
+	}
+	if !deletedUUIDs["node-dupe-1"] {
+		t.Errorf("expected node-dupe-1 to be deleted")
+	}
+	if !deletedUUIDs["node-dupe-2"] {
+		t.Errorf("expected node-dupe-2 to be deleted")
+	}
+	if deletedUUIDs["node-other"] {
+		t.Errorf("node-other should NOT be deleted")
+	}
+}

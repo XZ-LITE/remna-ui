@@ -21,6 +21,7 @@ import (
 	"regexp"
 
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -464,6 +465,97 @@ func getSSHClient(server types.SavedServer) (*ssh.Client, error) {
 
 }
 
+// pooledSSHClient holds a cached SSH client and its last activity timestamp
+type pooledSSHClient struct {
+	client   *ssh.Client
+	lastUsed time.Time
+}
+
+var (
+	sshPoolMu sync.Mutex
+	sshPool   = make(map[string]*pooledSSHClient)
+)
+
+func init() {
+	// Background reaper: cleans up idle SSH connections older than 45 seconds
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		for range ticker.C {
+			sshPoolMu.Lock()
+			now := time.Now()
+			for k, entry := range sshPool {
+				if now.Sub(entry.lastUsed) > 45*time.Second {
+					if entry.client != nil {
+						entry.client.Close()
+					}
+					delete(sshPool, k)
+				}
+			}
+			sshPoolMu.Unlock()
+		}
+	}()
+}
+
+func getSSHKey(server types.SavedServer) string {
+	port := server.Port
+	if port == 0 {
+		port = 22
+	}
+	user := server.Username
+	if user == "" {
+		user = "root"
+	}
+	return fmt.Sprintf("%s:%d:%s", server.Host, port, user)
+}
+
+// getPooledSession returns an active SSH session from a pooled, keepalive-verified SSH client.
+// If no client exists or the connection was severed, a fresh client is dialed and stored in the pool.
+func getPooledSession(server types.SavedServer) (*ssh.Session, error) {
+	key := getSSHKey(server)
+
+	sshPoolMu.Lock()
+	if entry, exists := sshPool[key]; exists && entry.client != nil {
+		// Verify connection health with a lightweight keepalive request
+		_, _, err := entry.client.SendRequest("keepalive@openssh.com", true, nil)
+		if err == nil {
+			session, sessErr := entry.client.NewSession()
+			if sessErr == nil {
+				entry.lastUsed = time.Now()
+				sshPoolMu.Unlock()
+				return session, nil
+			}
+		}
+		// Connection failed or session cannot be opened; clean up stale client
+		entry.client.Close()
+		delete(sshPool, key)
+	}
+	sshPoolMu.Unlock()
+
+	// Dial fresh client outside of global lock to prevent blocking concurrent dials to different hosts
+	newClient, err := getSSHClient(server)
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := newClient.NewSession()
+	if err != nil {
+		newClient.Close()
+		return nil, err
+	}
+
+	sshPoolMu.Lock()
+	if old, exists := sshPool[key]; exists && old.client != nil {
+		old.client.Close()
+	}
+	sshPool[key] = &pooledSSHClient{
+		client:   newClient,
+		lastUsed: time.Now(),
+	}
+	sshPoolMu.Unlock()
+
+	return session, nil
+}
+
 
 
 func GetServerStatus(server types.SavedServer, password string) types.ServerStatusResult {
@@ -478,7 +570,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 	start := time.Now()
 
-	client, err := getSSHClient(server)
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -492,23 +584,18 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 	}
 
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
-
-	if err != nil {
-
-		return types.ServerStatusResult{Success: false, Error: err.Error()}
-
-	}
-
 	defer session.Close()
 
 
 
-	cmd := `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"`
+	var cmd string
+	if server.Role == "node" {
+		// Lightweight interrogation optimized for Edge Nodes: avoids heavy & non-existent Postgres/Panel checks
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; echo ""; echo "---"; echo "0"; echo "---"; echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; echo "no"`
+	} else {
+		// Comprehensive interrogation for Master Panel VPS (includes Postgres DB, Backups, and Valkey Sockets)
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"`
+	}
 
 	out, err := session.Output(cmd)
 
@@ -789,19 +876,7 @@ func RestartContainer(server types.SavedServer, container string) types.CommandR
 
 
 
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -829,19 +904,7 @@ func RestartContainer(server types.SavedServer, container string) types.CommandR
 
 func RestartAllStack(server types.SavedServer) types.CommandResult {
 
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1046,23 +1109,11 @@ func GetContainerLogs(server types.SavedServer, container string) string {
 
 
 
-	client, err := getSSHClient(server)
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
 		return fmt.Sprintf("Ошибка: %v", err)
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
-
-	if err != nil {
-
-		return err.Error()
 
 	}
 
@@ -1254,19 +1305,7 @@ docker compose ps
 
 func OptimizeNetworkBBR(server types.SavedServer) types.CommandResult {
 
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1324,19 +1363,7 @@ echo "Google BBR активен ($CURRENT), очередь fq включена!"
 
 func ConfigureDockerMirrors(server types.SavedServer) types.CommandResult {
 
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1714,19 +1741,7 @@ fi
 
 func ToggleAntiAbuse(server types.SavedServer, enable bool) types.CommandResult {
 
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
+	session, err := getPooledSession(server)
 
 	if err != nil {
 
@@ -1907,15 +1922,9 @@ echo "Защита от торрентов и спама отключена."
 // ToggleStackPerformance enables or disables performance optimizations:
 // Valkey Unix Domain Socket, PostgreSQL 512MB shared memory, ulimits 1M, and Linux kernel sysctl memory tuning.
 func ToggleStackPerformance(server types.SavedServer, enable bool) types.CommandResult {
-	client, err := getSSHClient(server)
+	session, err := getPooledSession(server)
 	if err != nil {
 		return types.CommandResult{Success: false, Error: "Ошибка подключения SSH: " + err.Error()}
-	}
-	defer client.Close()
-
-	session, err := client.NewSession()
-	if err != nil {
-		return types.CommandResult{Success: false, Error: "Ошибка создания сессии SSH: " + err.Error()}
 	}
 	defer session.Close()
 
@@ -2849,22 +2858,82 @@ func CheckAppUpdate(repo string) types.AppUpdateInfo {
 	}
 }
 
+func comparePreReleases(preA, preB string) int {
+	if preA == preB {
+		return 0
+	}
+	partsA := strings.Split(preA, ".")
+	partsB := strings.Split(preB, ".")
+	for i := 0; i < len(partsA) && i < len(partsB); i++ {
+		pA, pB := partsA[i], partsB[i]
+		if pA == pB {
+			continue
+		}
+		numA, errA := strconv.Atoi(pA)
+		numB, errB := strconv.Atoi(pB)
+		if errA == nil && errB == nil {
+			if numA > numB {
+				return 1
+			}
+			return -1
+		}
+		// Numerical identifiers always have lower precedence than non-numeric identifiers
+		if errA == nil && errB != nil {
+			return -1
+		}
+		if errA != nil && errB == nil {
+			return 1
+		}
+		// Both are string identifiers: compare lexically
+		if pA > pB {
+			return 1
+		}
+		return -1
+	}
+	if len(partsA) > len(partsB) {
+		return 1
+	}
+	if len(partsA) < len(partsB) {
+		return -1
+	}
+	return 0
+}
+
 func isVersionNewer(latest, current string) bool {
-	cleanVersion := func(v string) string {
+	splitVersion := func(v string) (string, string) {
 		v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-		if idx := strings.IndexAny(v, "-+"); idx != -1 {
+		v = strings.TrimPrefix(v, "V")
+		// Discard build metadata after '+'
+		if idx := strings.Index(v, "+"); idx != -1 {
 			v = v[:idx]
 		}
-		return v
+		pre := ""
+		if idx := strings.Index(v, "-"); idx != -1 {
+			pre = v[idx+1:]
+			v = v[:idx]
+		}
+		return v, pre
 	}
-	lClean := cleanVersion(latest)
-	cClean := cleanVersion(current)
-	lParts := strings.Split(lClean, ".")
-	cParts := strings.Split(cClean, ".")
-	for i := 0; i < len(lParts) && i < len(cParts); i++ {
+
+	lBase, lPre := splitVersion(latest)
+	cBase, cPre := splitVersion(current)
+
+	lParts := strings.Split(lBase, ".")
+	cParts := strings.Split(cBase, ".")
+
+	maxLen := len(lParts)
+	if len(cParts) > maxLen {
+		maxLen = len(cParts)
+	}
+
+	for i := 0; i < maxLen; i++ {
 		var lNum, cNum int
-		fmt.Sscanf(lParts[i], "%d", &lNum)
-		fmt.Sscanf(cParts[i], "%d", &cNum)
+		if i < len(lParts) {
+			lNum, _ = strconv.Atoi(lParts[i])
+		}
+		if i < len(cParts) {
+			cNum, _ = strconv.Atoi(cParts[i])
+		}
 		if lNum > cNum {
 			return true
 		}
@@ -2872,14 +2941,18 @@ func isVersionNewer(latest, current string) bool {
 			return false
 		}
 	}
-	if len(lParts) != len(cParts) {
-		return len(lParts) > len(cParts)
+
+	// Base versions are equal (e.g. 2.0.0 vs 2.0.0)
+	// A normal version has greater precedence than a pre-release version
+	if cPre != "" && lPre == "" {
+		return true // latest is stable release, current is pre-release
 	}
-	// If base numeric versions are equal (e.g. 2.0.0 vs 2.0.0-beta.1), stable is newer than pre-release
-	currentHasPre := strings.ContainsAny(current, "-+")
-	latestHasPre := strings.ContainsAny(latest, "-+")
-	if currentHasPre && !latestHasPre {
-		return true
+	if cPre == "" && lPre != "" {
+		return false // latest is pre-release, current is stable release
 	}
+	if cPre != "" && lPre != "" {
+		return comparePreReleases(lPre, cPre) > 0
+	}
+
 	return false
 }
