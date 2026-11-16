@@ -31,8 +31,9 @@ type DeploymentPlan struct {
 	DecoyCloneURL      string   `json:"decoy_clone_url"`      // URL to clone if chosen
 	TorrentBlocker     bool     `json:"torrent_blocker"`      // Block BitTorrent in Xray
 	BlockSpamPorts     bool     `json:"block_spam_ports"`     // Block SMTP 25, 465, 587
-	XrayCoreType       string   `json:"xray_core_type"`       // "official" or "jolymmiles"
-	EnableTinyAuth     bool     `json:"enable_tinyauth"`      // Optional TinyAuth layer
+	XrayCoreType            string   `json:"xray_core_type"`            // "official" or "jolymmiles"
+	EnableTinyAuth          bool     `json:"enable_tinyauth"`           // Optional TinyAuth layer
+	PerformanceOptimization bool     `json:"performance_optimization"`  // Valkey Unix Domain Sockets & Postgres 512MB RAM
 }
 
 type DNSResult struct {

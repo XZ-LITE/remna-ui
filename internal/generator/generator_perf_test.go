@@ -1,8 +1,12 @@
 package generator
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"remna-ui/internal/types"
 )
 
 func TestGenerator_PerformanceTemplates(t *testing.T) {
@@ -52,5 +56,57 @@ func TestGenerator_PerformanceTemplates(t *testing.T) {
 	nginx := RenderNginxConf("panel.example.com", "sub.example.com", true, "admin@example.com", false)
 	if !strings.Contains(nginx, "gzip on;") {
 		t.Errorf("RenderNginxConf missing 'gzip on;'")
+	}
+}
+
+func TestGenerator_DeploymentPlanPerformanceSwitch(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "remna_plan_perf_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Scenario A: PerformanceOptimization = true
+	dirOpt := filepath.Join(tempDir, "opt")
+	planOpt := types.DeploymentPlan{
+		Components:              []string{"panel"},
+		Domain:                  "example.com",
+		PanelDomain:             "panel.example.com",
+		PerformanceOptimization: true,
+	}
+	resOpt := WriteOutputFiles(planOpt, dirOpt)
+	if !resOpt.Success {
+		t.Fatalf("WriteOutputFiles (opt) failed: %v", resOpt.Error)
+	}
+
+	envOpt, _ := os.ReadFile(filepath.Join(dirOpt, "panel", ".env"))
+	if !strings.Contains(string(envOpt), "REDIS_SOCKET=/var/run/valkey/valkey.sock") {
+		t.Errorf("Optimized panel/.env missing REDIS_SOCKET")
+	}
+	compOpt, _ := os.ReadFile(filepath.Join(dirOpt, "panel", "docker-compose.yml"))
+	if !strings.Contains(string(compOpt), "shm_size: 512mb") {
+		t.Errorf("Optimized docker-compose.yml missing shm_size: 512mb")
+	}
+
+	// Scenario B: PerformanceOptimization = false
+	dirStd := filepath.Join(tempDir, "std")
+	planStd := types.DeploymentPlan{
+		Components:              []string{"panel"},
+		Domain:                  "example.com",
+		PanelDomain:             "panel.example.com",
+		PerformanceOptimization: false,
+	}
+	resStd := WriteOutputFiles(planStd, dirStd)
+	if !resStd.Success {
+		t.Fatalf("WriteOutputFiles (std) failed: %v", resStd.Error)
+	}
+
+	envStd, _ := os.ReadFile(filepath.Join(dirStd, "panel", ".env"))
+	if !strings.Contains(string(envStd), "#REDIS_SOCKET=") || !strings.Contains(string(envStd), "REDIS_HOST=remnawave-redis") {
+		t.Errorf("Standard panel/.env should have REDIS_HOST and commented REDIS_SOCKET: %s", string(envStd))
+	}
+	compStd, _ := os.ReadFile(filepath.Join(dirStd, "panel", "docker-compose.yml"))
+	if strings.Contains(string(compStd), "shm_size: 512mb") {
+		t.Errorf("Standard docker-compose.yml should not have shm_size: 512mb")
 	}
 }

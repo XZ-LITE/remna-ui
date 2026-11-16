@@ -350,6 +350,17 @@ func DeployRemotely(
 		`else echo "Swap уже настроен: $(free -h | awk '/^Swap:/{print $2}')"; fi`
 	_ = runRemoteCmd("Оптимизация памяти (Swap 2GB)", swapCmd)
 
+	if plan.PerformanceOptimization {
+		sysctlRamCmd := `cat > /etc/sysctl.d/99-remnawave-ram.conf <<'EOF'
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+vm.dirty_ratio=15
+vm.dirty_background_ratio=5
+EOF
+sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remnawave-ram.conf >/dev/null 2>&1 || true`
+		_ = runRemoteCmd("Оптимизация ядра Linux (RAM sysctl)", sysctlRamCmd)
+	}
+
 	// Install Docker if missing
 	dockerCheck := `if ! command -v docker >/dev/null 2>&1; then ` +
 		`echo "Проверка готовности пакетного менеджера dpkg/apt..."; ` +
@@ -460,17 +471,32 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 			}
 		}
 
-		env := generator.RenderPanelEnvWithCreds(
-			plan.PanelDomain,
-			plan.SubscriptionDomain,
-			hasSub,
-			existingAppSecret,
-			existingDbPass,
-			existingMetricsPass,
-			existingWebhookSecret,
-		)
+		var env string
+		var compose string
+		if plan.PerformanceOptimization {
+			env = generator.RenderPanelEnvWithCreds(
+				plan.PanelDomain,
+				plan.SubscriptionDomain,
+				hasSub,
+				existingAppSecret,
+				existingDbPass,
+				existingMetricsPass,
+				existingWebhookSecret,
+			)
+			compose = generator.RenderPanelCompose()
+		} else {
+			env = generator.RenderPanelEnvStandardWithCreds(
+				plan.PanelDomain,
+				plan.SubscriptionDomain,
+				hasSub,
+				existingAppSecret,
+				existingDbPass,
+				existingMetricsPass,
+				existingWebhookSecret,
+			)
+			compose = generator.RenderPanelComposeStandard()
+		}
 		_ = runRemoteCmd("Запись panel/.env", fmt.Sprintf("mkdir -p %s/panel && cat > %s/panel/.env <<'EOF'\n%s\nEOF", targetDir, targetDir, env))
-		compose := generator.RenderPanelCompose()
 		_ = runRemoteCmd("Запись panel/docker-compose.yml", fmt.Sprintf("cat > %s/panel/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, compose))
 	}
 

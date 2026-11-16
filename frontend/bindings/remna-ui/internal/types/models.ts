@@ -368,6 +368,11 @@ export class DeploymentPlan {
      */
     "enable_tinyauth": boolean;
 
+    /**
+     * Valkey Unix Domain Sockets & Postgres 512MB RAM
+     */
+    "performance_optimization": boolean;
+
     /** Creates a new DeploymentPlan instance. */
     constructor($$source: Partial<DeploymentPlan> = {}) {
         if (!("components" in $$source)) {
@@ -465,6 +470,9 @@ export class DeploymentPlan {
         }
         if (!("enable_tinyauth" in $$source)) {
             this["enable_tinyauth"] = false;
+        }
+        if (!("performance_optimization" in $$source)) {
+            this["performance_optimization"] = false;
         }
 
         Object.assign(this, $$source);

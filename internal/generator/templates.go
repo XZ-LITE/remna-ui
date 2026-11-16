@@ -109,6 +109,55 @@ func RenderPanelEnv(panelDomain, subDomain string, subEnabled bool) string {
 	return RenderPanelEnvWithCreds(panelDomain, subDomain, subEnabled, "", "", "", "")
 }
 
+func RenderPanelEnvStandardWithCreds(panelDomain, subDomain string, subEnabled bool, appSecret, dbPass, metricsPass, webhookSecret string) string {
+	domain := dns.NormalizeDomain(panelDomain)
+	sub := dns.NormalizeDomain(subDomain)
+
+	if appSecret == "" {
+		appSecret = randomHex(32)
+	}
+	if dbPass == "" {
+		dbPass = randomHex(16)
+	}
+	if metricsPass == "" {
+		metricsPass = randomHex(16)
+	}
+	if webhookSecret == "" {
+		webhookSecret = randomHex(16)
+	}
+
+	subPublicDomain := ""
+	if subEnabled && sub != "" && sub != domain {
+		subPublicDomain = sub
+	}
+
+	return fmt.Sprintf(`APP_PORT=3000
+METRICS_PORT=3001
+API_INSTANCES=1
+TRUST_PROXY=true
+APP_SECRET=%s
+METRICS_USER=admin
+METRICS_PASS=%s
+WEBHOOK_ENABLED=false
+WEBHOOK_SECRET_HEADER=%s
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=%s
+POSTGRES_DB=postgres
+DATABASE_URL=postgresql://postgres:%s@remnawave-db:5432/postgres
+#REDIS_SOCKET=
+REDIS_HOST=remnawave-redis
+REDIS_PORT=6379
+PANEL_DOMAIN=%s
+FRONT_END_DOMAIN=%s
+SUB_PUBLIC_DOMAIN=%s
+JWT_AUTH_LIFETIME=168
+`, appSecret, metricsPass, webhookSecret, dbPass, dbPass, domain, domain, subPublicDomain)
+}
+
+func RenderPanelEnvStandard(panelDomain, subDomain string, subEnabled bool) string {
+	return RenderPanelEnvStandardWithCreds(panelDomain, subDomain, subEnabled, "", "", "", "")
+}
+
 func RenderPanelCompose() string {
 	return `services:
   remnawave:

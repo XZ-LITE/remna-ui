@@ -442,6 +442,7 @@ export function App() {
   const [useCamouflage, setUseCamouflage] = useState<boolean>(true);
 
   const [useUfw, setUseUfw] = useState<boolean>(true);
+  const [optimizePerformance, setOptimizePerformance] = useState<boolean>(true);
 
   const [useCloudflareDns, setUseCloudflareDns] = useState<boolean>(false);
 
@@ -1503,6 +1504,8 @@ export function App() {
       xray_core_type: xrayCoreType,
 
       enable_tinyauth: false,
+
+      performance_optimization: optimizePerformance,
 
     });
 
@@ -4665,6 +4668,25 @@ export function App() {
                                   ),
 
                                 },
+
+                                ...((preset === "all-in-one" || components.includes("panel") || preset === "panel-only") ? [
+                                  {
+                                    icon: <Cpu size={16} />,
+                                    title: "Оптимизация производительности (RAM Boost & Sockets)",
+                                    description: "Valkey через Unix Domain Socket (без TCP loopback оверхеда), 512MB shared memory для Postgres, ulimits 1M дескрипторов и тюнинг swappiness ядра (Рекомендуется).",
+                                    action: (
+                                      <div
+                                        className={`win-switch ${optimizePerformance ? "active" : ""}`}
+                                        onClick={() => setOptimizePerformance(!optimizePerformance)}
+                                      >
+                                        <div className="win-switch-track">
+                                          <div className="win-switch-thumb" />
+                                        </div>
+                                        <span className="win-switch-label">{optimizePerformance ? "Вкл" : "Откл"}</span>
+                                      </div>
+                                    ),
+                                  },
+                                ] : []),
 
                                 ...((preset === "all-in-one" || components.includes("node")) ? [
                                   {

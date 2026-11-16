@@ -90,9 +90,17 @@ func WriteOutputFiles(plan types.DeploymentPlan, targetDir string) types.Generat
 	hasSub := hasComponent(plan.Components, "subscription")
 
 	if hasPanel {
-		envContent := RenderPanelEnv(plan.PanelDomain, plan.SubscriptionDomain, hasSub)
+		var envContent string
+		var composeContent string
+		if plan.PerformanceOptimization {
+			envContent = RenderPanelEnv(plan.PanelDomain, plan.SubscriptionDomain, hasSub)
+			composeContent = RenderPanelCompose()
+		} else {
+			envContent = RenderPanelEnvStandard(plan.PanelDomain, plan.SubscriptionDomain, hasSub)
+			composeContent = RenderPanelComposeStandard()
+		}
 		_ = writeFile(filepath.Join("panel", ".env"), envContent)
-		_ = writeFile(filepath.Join("panel", "docker-compose.yml"), RenderPanelCompose())
+		_ = writeFile(filepath.Join("panel", "docker-compose.yml"), composeContent)
 	}
 
 	// 4. Node

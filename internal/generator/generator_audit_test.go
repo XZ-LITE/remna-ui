@@ -24,8 +24,9 @@ func TestGeneratorAudit_FullStackDeploymentPlan(t *testing.T) {
 		SubscriptionDomain: "https://sub.example.com:443/",
 		Proxy:              "caddy",
 		SubscriptionMode:   "bundled",
-		NodePort:           2222,
-		OutputDir:          tempDir,
+		NodePort:                2222,
+		PerformanceOptimization: true,
+		OutputDir:               tempDir,
 	}
 
 	res := WriteOutputFiles(plan, tempDir)
