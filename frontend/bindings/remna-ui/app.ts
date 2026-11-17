@@ -50,6 +50,12 @@ export function CheckDNS(domain: string): $CancellablePromise<types$0.DNSResult>
     });
 }
 
+export function CheckIPBlock(host: string, port: number): $CancellablePromise<types$0.IPBlockCheckResult> {
+    return $Call.ByID(1518460691, host, port).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
 export function ConfigureDockerMirrors(server: types$0.SavedServer): $CancellablePromise<types$0.CommandResult> {
     return $Call.ByID(3382450137, server).then(($result: any) => {
         return $$createType0($result);
@@ -76,7 +82,7 @@ export function CreateBackup(server: types$0.SavedServer): $CancellablePromise<t
 
 export function CreateNodeInPanel(panelURL: string, apiToken: string, req: types$0.CreateNodeRequest): $CancellablePromise<types$0.CreateNodeResponse> {
     return $Call.ByID(4251987572, panelURL, apiToken, req).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
@@ -104,7 +110,7 @@ export function FixDatabaseSync(server: types$0.SavedServer): $CancellablePromis
 
 export function GenerateConfig(plan: types$0.DeploymentPlan): $CancellablePromise<types$0.GenerateResult> {
     return $Call.ByID(1844640036, plan).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType6($result);
     });
 }
 
@@ -114,31 +120,31 @@ export function GetContainerLogs(server: types$0.SavedServer, container: string)
 
 export function GetPanelConfigProfiles(panelURL: string, apiToken: string): $CancellablePromise<types$0.PanelProfileItem[]> {
     return $Call.ByID(1233892151, panelURL, apiToken).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType8($result);
     });
 }
 
 export function GetPanelNodes(panelURL: string, apiToken: string): $CancellablePromise<types$0.PanelNodeItem[]> {
     return $Call.ByID(1128276812, panelURL, apiToken).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType10($result);
     });
 }
 
 export function GetPanelSquads(panelURL: string, apiToken: string): $CancellablePromise<types$0.PanelSquadItem[]> {
     return $Call.ByID(1375011728, panelURL, apiToken).then(($result: any) => {
-        return $$createType11($result);
+        return $$createType12($result);
     });
 }
 
 export function GetServerStatus(server: types$0.SavedServer, password: string): $CancellablePromise<types$0.ServerStatusResult> {
     return $Call.ByID(880383150, server, password).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
 }
 
 export function GetServers(): $CancellablePromise<types$0.SavedServer[]> {
     return $Call.ByID(4270553301).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType15($result);
     });
 }
 
@@ -212,13 +218,13 @@ export function StartDeployment(plan: types$0.DeploymentPlan): $CancellablePromi
 
 export function TestPanelAPI(panelURL: string, apiToken: string): $CancellablePromise<types$0.PanelInfoResult> {
     return $Call.ByID(2892355839, panelURL, apiToken).then(($result: any) => {
-        return $$createType15($result);
+        return $$createType16($result);
     });
 }
 
 export function TestSSH(host: string, port: number, user: string, password: string, keyPath: string): $CancellablePromise<types$0.SSHTestResult> {
     return $Call.ByID(4121859417, host, port, user, password, keyPath).then(($result: any) => {
-        return $$createType16($result);
+        return $$createType17($result);
     });
 }
 
@@ -251,16 +257,17 @@ const $$createType0 = types$0.CommandResult.createFrom;
 const $$createType1 = types$0.NodeSecurityAudit.createFrom;
 const $$createType2 = types$0.AppUpdateInfo.createFrom;
 const $$createType3 = types$0.DNSResult.createFrom;
-const $$createType4 = types$0.CreateNodeResponse.createFrom;
-const $$createType5 = types$0.GenerateResult.createFrom;
-const $$createType6 = types$0.PanelProfileItem.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = types$0.PanelNodeItem.createFrom;
-const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = types$0.PanelSquadItem.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = types$0.ServerStatusResult.createFrom;
-const $$createType13 = types$0.SavedServer.createFrom;
-const $$createType14 = $Create.Array($$createType13);
-const $$createType15 = types$0.PanelInfoResult.createFrom;
-const $$createType16 = types$0.SSHTestResult.createFrom;
+const $$createType4 = types$0.IPBlockCheckResult.createFrom;
+const $$createType5 = types$0.CreateNodeResponse.createFrom;
+const $$createType6 = types$0.GenerateResult.createFrom;
+const $$createType7 = types$0.PanelProfileItem.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = types$0.PanelNodeItem.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = types$0.PanelSquadItem.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = types$0.ServerStatusResult.createFrom;
+const $$createType14 = types$0.SavedServer.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = types$0.PanelInfoResult.createFrom;
+const $$createType17 = types$0.SSHTestResult.createFrom;

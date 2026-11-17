@@ -135,6 +135,7 @@ import { Events } from "@wailsio/runtime";
 const {
   AttachNodeSecret,
   CheckDNS,
+  CheckIPBlock,
   TestSSH,
   GenerateConfig,
   StartDeployment,
@@ -193,6 +194,8 @@ import { EditServerModal, EditServerData } from "./components/modals/EditServerM
 import { RestoreBackupModal } from "./components/modals/RestoreBackupModal";
 
 import { AntiProbingAuditModal } from "./components/modals/AntiProbingAuditModal";
+
+import { IPBlockModal } from "./components/modals/IPBlockModal";
 
 import { SettingsCard } from "./components/ui/SettingsCard";
 
@@ -503,6 +506,17 @@ export function App() {
   const [sshPass, setSshPass] = useState<string>("");
 
   const [sshKey, setSshKey] = useState<string>("");
+
+  // Wizard IP Availability Check in Russia
+  const [wizardIPChecking, setWizardIPChecking] = useState<boolean>(false);
+  const [wizardIPResult, setWizardIPResult] = useState<types.IPBlockCheckResult | null>(null);
+
+  // Standalone Server IP Block Modal
+  const [ipCheckModal, setIpCheckModal] = useState<{
+    server: types.SavedServer;
+    result: types.IPBlockCheckResult | null;
+    loading: boolean;
+  } | null>(null);
 
 
 
@@ -1113,6 +1127,56 @@ export function App() {
 
     }
 
+  };
+
+  // Check Wizard IP Availability in Russia
+  const handleCheckWizardIP = async () => {
+    if (!sshHost) return;
+    setWizardIPChecking(true);
+    setWizardIPResult(null);
+    try {
+      const res = await CheckIPBlock(sshHost, sshPort || 22);
+      setWizardIPResult(res);
+      if (res.status === "clean") {
+        addToast("success", "IP доступен из РФ (проверка ТСПУ пройдена)");
+      } else if (res.status === "blocked") {
+        addToast("error", "Внимание: обнаружена блокировка IP в РФ (ТСПУ / РКН)");
+      } else if (res.status === "partial") {
+        addToast("info", "Частичная доступность IP в РФ");
+      } else {
+        addToast("error", "Хост не отвечает на проверочные запросы");
+      }
+    } catch (err: any) {
+      addToast("error", `Ошибка проверки IP: ${err}`);
+    } finally {
+      setWizardIPChecking(false);
+    }
+  };
+
+  // Open IP Block Check Modal for Saved Server
+  const handleOpenIPCheckModal = async (srv: types.SavedServer) => {
+    setIpCheckModal({ server: srv, result: null, loading: true });
+    try {
+      const res = await CheckIPBlock(srv.host, srv.port || 22);
+      setIpCheckModal({ server: srv, result: res, loading: false });
+    } catch (err: any) {
+      addToast("error", `Ошибка проверки IP сервера ${srv.host}: ${err}`);
+      setIpCheckModal((prev) => (prev ? { ...prev, loading: false } : null));
+    }
+  };
+
+  // Refresh IP Block Check Modal
+  const handleRefreshIPCheckModal = async () => {
+    if (!ipCheckModal?.server) return;
+    const srv = ipCheckModal.server;
+    setIpCheckModal((prev) => (prev ? { ...prev, loading: true } : null));
+    try {
+      const res = await CheckIPBlock(srv.host, srv.port || 22);
+      setIpCheckModal({ server: srv, result: res, loading: false });
+    } catch (err: any) {
+      addToast("error", `Ошибка повторной проверки IP: ${err}`);
+      setIpCheckModal((prev) => (prev ? { ...prev, loading: false } : null));
+    }
   };
 
 
@@ -5136,7 +5200,11 @@ export function App() {
 
                                   value={sshHost}
 
-                                  onChange={(e) => setSshHost(e.target.value)}
+                                  onChange={(e) => {
+                                    setSshHost(e.target.value.trim());
+                                    setSshStatus(null);
+                                    setWizardIPResult(null);
+                                  }}
 
                                 />
 
@@ -5310,11 +5378,11 @@ export function App() {
 
 
 
-                          {/* SSH Test Action Row */}
+                          {/* SSH Test & IP Block Check Action Row */}
 
                           <div className="settings-card-row" style={{ flexWrap: "wrap", gap: "10px" }}>
 
-                            <div className="settings-card-info" style={{ flex: "0 0 auto" }}>
+                            <div className="settings-card-info" style={{ flex: "0 0 auto", display: "flex", gap: "8px", flexWrap: "wrap" }}>
 
                               <button
 
@@ -5343,6 +5411,46 @@ export function App() {
                                     <Server size={14} />
 
                                     <span>Проверить соединение и железо</span>
+
+                                  </>
+
+                                )}
+
+                              </button>
+
+                              <button
+
+                                type="button"
+
+                                className="win-button"
+
+                                disabled={!sshHost || wizardIPChecking}
+
+                                onClick={handleCheckWizardIP}
+
+                                title="Проверить доступность IP-адреса из РФ (проверка блокировки ТСПУ / РКН)"
+
+                                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+
+                              >
+
+                                {wizardIPChecking ? (
+
+                                  <>
+
+                                    <RefreshCw size={14} className="animate-spin" />
+
+                                    <span>Диагностика ТСПУ...</span>
+
+                                  </>
+
+                                ) : (
+
+                                  <>
+
+                                    <ShieldAlert size={14} style={{ color: "#38bdf8" }} />
+
+                                    <span>Проверить доступность из РФ</span>
 
                                   </>
 
@@ -5395,6 +5503,85 @@ export function App() {
                             </div>
 
                           </div>
+
+                          {/* Wizard IP Check Result Card */}
+                          {wizardIPResult && (
+                            <div style={{ padding: "0 16px 12px 16px" }}>
+                              <div className={`ip-check-card ${wizardIPResult.status}`}>
+                                <div className="ip-check-header">
+                                  <div className="ip-check-verdict-group">
+                                    <span className={`ip-check-badge ${wizardIPResult.status}`}>
+                                      {wizardIPResult.status === "clean" ? (
+                                        <>
+                                          <CheckCircle2 size={12} />
+                                          <span>Чистый IP · Доступен в РФ</span>
+                                        </>
+                                      ) : wizardIPResult.status === "blocked" ? (
+                                        <>
+                                          <AlertTriangle size={12} />
+                                          <span>Блокировка ТСПУ / РКН</span>
+                                        </>
+                                      ) : wizardIPResult.status === "partial" ? (
+                                        <>
+                                          <AlertCircle size={12} />
+                                          <span>Частичная доступность</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <AlertOctagon size={12} />
+                                          <span>Хост недоступен</span>
+                                        </>
+                                      )}
+                                    </span>
+                                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+                                      {wizardIPResult.host}:{wizardIPResult.port}
+                                    </span>
+                                  </div>
+
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                    {wizardIPResult.isp_info && (
+                                      <span className="server-chip" style={{ fontSize: "11px" }}>
+                                        <Server size={10} />
+                                        <span>{wizardIPResult.isp_info}</span>
+                                      </span>
+                                    )}
+                                    {wizardIPResult.location_info && (
+                                      <span className="server-chip" style={{ fontSize: "11px" }}>
+                                        <MapPin size={10} />
+                                        <span>{wizardIPResult.location_info}</span>
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="win-button"
+                                      style={{ height: "22px", padding: "0 6px", fontSize: "11px" }}
+                                      onClick={() => setWizardIPResult(null)}
+                                      title="Закрыть отчет"
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <p className="ip-check-summary">{wizardIPResult.summary}</p>
+
+                                {wizardIPResult.probes && wizardIPResult.probes.length > 0 && (
+                                  <div className="ip-probe-pills-row">
+                                    {wizardIPResult.probes.map((pr: any, pIdx: number) => {
+                                      const isRef = pr.country_code === "de";
+                                      const pillClass = isRef ? "ref" : pr.success ? "ok" : "fail";
+                                      return (
+                                        <span key={pIdx} className={`ip-probe-pill ${pillClass}`} title={pr.error || `Задержка: ${pr.latency_ms} ms`}>
+                                          {pr.success ? <Check size={10} /> : <X size={10} />}
+                                          <span>{pr.location}: {pr.success ? `${pr.latency_ms} ms` : (pr.error || "Сбой")}</span>
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
                           {/* Dedicated Error Callout if SSH connection failed */}
 
@@ -6558,6 +6745,17 @@ export function App() {
                                       )}
 
                                       <div className="server-menu-divider" />
+
+                                      <button
+                                        className="server-menu-item"
+                                        onClick={() => {
+                                          setActiveServerMenu(null);
+                                          handleOpenIPCheckModal(srv);
+                                        }}
+                                      >
+                                        <ShieldAlert size={14} style={{ color: "#38bdf8" }} />
+                                        <span>Проверить доступность из РФ</span>
+                                      </button>
 
                                       <button
                                         className="server-menu-item"
@@ -8204,6 +8402,8 @@ export function App() {
 
           onTestSSH={(h, p, u, pass, key) => TestSSH(h, p, u, pass, key)}
 
+          onCheckIPBlock={(h, p) => CheckIPBlock(h, p)}
+
         />
 
       )}
@@ -8249,6 +8449,17 @@ export function App() {
           onRefresh={(panelIp) => handleOpenAudit(auditModal.server!, panelIp)}
           onApplyProtection={handleApplyProtection}
           onToast={addToast}
+        />
+      )}
+
+      {/* Modal: IP Availability & TSPU Check */}
+      {ipCheckModal && (
+        <IPBlockModal
+          server={ipCheckModal.server}
+          result={ipCheckModal.result}
+          loading={ipCheckModal.loading}
+          onClose={() => setIpCheckModal(null)}
+          onRefresh={handleRefreshIPCheckModal}
         />
       )}
 

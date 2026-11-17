@@ -221,3 +221,25 @@ type NodeSecurityAudit struct {
 	Checks            []string `json:"checks"`
 }
 
+type ProbeNodeResult struct {
+	NodeID      string `json:"node_id"`
+	Location    string `json:"location"`
+	CountryCode string `json:"country_code"`
+	City        string `json:"city"`
+	Success     bool   `json:"success"`
+	LatencyMs   int    `json:"latency_ms"`
+	Error       string `json:"error,omitempty"`
+}
+
+type IPBlockCheckResult struct {
+	Host         string            `json:"host"`
+	Port         int               `json:"port"`
+	Status       string            `json:"status"` // "clean" | "blocked" | "partial" | "offline"
+	Summary      string            `json:"summary"`
+	ISPInfo      string            `json:"isp_info"`
+	LocationInfo string            `json:"location_info"`
+	Probes       []ProbeNodeResult `json:"probes"`
+	IsRKNBlocked bool              `json:"is_rkn_blocked"`
+	CheckedAt    string            `json:"checked_at"`
+}
+

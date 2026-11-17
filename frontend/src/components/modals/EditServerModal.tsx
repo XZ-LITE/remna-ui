@@ -17,6 +17,9 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  AlertOctagon,
+  ShieldAlert,
   MapPin,
 } from "lucide-react";
 import { types } from "../../../wailsjs/go/models";
@@ -45,7 +48,8 @@ interface EditServerModalProps {
   onClose: () => void;
   onSave: () => void;
   onSelectKeyFile: () => Promise<string>;
-  onTestSSH?: (host: string, port: number, user: string, pass: string, key: string) => Promise<types.SSHTestResult>;
+  onTestSSH?: (host: string, port: number, user: string, pass: string, key: string) => Promise<any>;
+  onCheckIPBlock?: (host: string, port: number) => Promise<any>;
 }
 
 export const EditServerModal: React.FC<EditServerModalProps> = ({
@@ -56,12 +60,29 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
   onSave,
   onSelectKeyFile,
   onTestSSH,
+  onCheckIPBlock,
 }) => {
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [testingSSH, setTestingSSH] = useState<boolean>(false);
   const [sshTestResult, setSshTestResult] = useState<types.SSHTestResult | null>(null);
+  const [checkingIP, setCheckingIP] = useState<boolean>(false);
+  const [ipCheckResult, setIpCheckResult] = useState<types.IPBlockCheckResult | null>(null);
 
   const isNew = !data.server.host || data.server.last_seen === "Только что добавлен";
+
+  const handleCheckIPBlock = async () => {
+    if (!onCheckIPBlock || !data.host) return;
+    setCheckingIP(true);
+    setIpCheckResult(null);
+    try {
+      const res = await onCheckIPBlock(data.host, data.port || 22);
+      setIpCheckResult(res);
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setCheckingIP(false);
+    }
+  };
 
   const handleTestSSH = async () => {
     if (!onTestSSH || !data.host) return;
@@ -434,8 +455,8 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
               </div>
             )}
 
-            {/* Live SSH Test Action & Result */}
-            {onTestSSH && (
+            {/* Live SSH & IP Block Test Action & Result */}
+            {(onTestSSH || onCheckIPBlock) && (
               <div
                 style={{
                   marginTop: "4px",
@@ -443,24 +464,46 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
                   borderTop: "1px dashed var(--win-card-stroke)",
                   display: "flex",
                   flexDirection: "column",
-                  gap: "8px",
+                  gap: "10px",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="win-button"
-                    disabled={testingSSH || !data.host}
-                    onClick={handleTestSSH}
-                    style={{ display: "flex", alignItems: "center", gap: "6px" }}
-                  >
-                    {testingSSH ? (
-                      <RefreshCw size={13} className="animate-spin" />
-                    ) : (
-                      <Activity size={13} style={{ color: "var(--win-accent)" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    {onTestSSH && (
+                      <button
+                        type="button"
+                        className="win-button"
+                        disabled={testingSSH || !data.host}
+                        onClick={handleTestSSH}
+                        style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {testingSSH ? (
+                          <RefreshCw size={13} className="animate-spin" />
+                        ) : (
+                          <Activity size={13} style={{ color: "var(--win-accent)" }} />
+                        )}
+                        <span>{testingSSH ? "Проверка SSH..." : "Тест SSH"}</span>
+                      </button>
                     )}
-                    <span>{testingSSH ? "Проверка SSH..." : "Проверить SSH соединение"}</span>
-                  </button>
+
+                    {onCheckIPBlock && (
+                      <button
+                        type="button"
+                        className="win-button"
+                        disabled={checkingIP || !data.host}
+                        onClick={handleCheckIPBlock}
+                        style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                        title="Проверить доступность IP-адреса из РФ (проверка блокировки ТСПУ / РКН)"
+                      >
+                        {checkingIP ? (
+                          <RefreshCw size={13} className="animate-spin" />
+                        ) : (
+                          <ShieldAlert size={13} style={{ color: "#38bdf8" }} />
+                        )}
+                        <span>{checkingIP ? "Диагностика ТСПУ..." : "Проверить IP в РФ"}</span>
+                      </button>
+                    )}
+                  </div>
 
                   {sshTestResult && (
                     <div
@@ -484,12 +527,85 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
                       ) : (
                         <>
                           <AlertCircle size={13} />
-                          <span>Ошибка: {sshTestResult.error || "Не удалось подключиться"}</span>
+                          <span>Ошибка SSH: {sshTestResult.error || "Не удалось подключиться"}</span>
                         </>
                       )}
                     </div>
                   )}
                 </div>
+
+                {/* Render IP Check Result Card if available */}
+                {ipCheckResult && (
+                  <div className={`ip-check-card ${ipCheckResult.status}`}>
+                    <div className="ip-check-header">
+                      <div className="ip-check-verdict-group">
+                        <span className={`ip-check-badge ${ipCheckResult.status}`}>
+                          {ipCheckResult.status === "clean" ? (
+                            <>
+                              <CheckCircle2 size={12} />
+                              <span>Чистый IP · Доступен в РФ</span>
+                            </>
+                          ) : ipCheckResult.status === "blocked" ? (
+                            <>
+                              <AlertTriangle size={12} />
+                              <span>Блокировка ТСПУ / РКН</span>
+                            </>
+                          ) : ipCheckResult.status === "partial" ? (
+                            <>
+                              <AlertCircle size={12} />
+                              <span>Частичная доступность</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertOctagon size={12} />
+                              <span>Сервер недоступен</span>
+                            </>
+                          )}
+                        </span>
+                        <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+                          {ipCheckResult.host}:{ipCheckResult.port}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        {ipCheckResult.isp_info && (
+                          <span className="server-chip" style={{ fontSize: "11px" }}>
+                            <Server size={10} />
+                            <span>{ipCheckResult.isp_info}</span>
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="win-button"
+                          style={{ height: "22px", padding: "0 6px", fontSize: "11px" }}
+                          onClick={() => setIpCheckResult(null)}
+                          title="Закрыть отчет"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <p className="ip-check-summary">
+                      {ipCheckResult.summary}
+                    </p>
+
+                    {ipCheckResult.probes && ipCheckResult.probes.length > 0 && (
+                      <div className="ip-probe-pills-row">
+                        {ipCheckResult.probes.map((pr: any, pIdx: number) => {
+                          const isRef = pr.country_code === "de";
+                          const pillClass = isRef ? "ref" : pr.success ? "ok" : "fail";
+                          return (
+                            <span key={pIdx} className={`ip-probe-pill ${pillClass}`} title={pr.error || `Задержка: ${pr.latency_ms} ms`}>
+                              {pr.success ? <Check size={10} /> : <X size={10} />}
+                              <span>{pr.location}: {pr.success ? `${pr.latency_ms} ms` : (pr.error || "Сбой")}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

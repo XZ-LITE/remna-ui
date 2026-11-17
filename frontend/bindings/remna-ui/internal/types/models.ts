@@ -528,6 +528,67 @@ export class GenerateResult {
     }
 }
 
+export class IPBlockCheckResult {
+    "host": string;
+    "port": number;
+
+    /**
+     * "clean" | "blocked" | "partial" | "offline"
+     */
+    "status": string;
+    "summary": string;
+    "isp_info": string;
+    "location_info": string;
+    "probes": ProbeNodeResult[];
+    "is_rkn_blocked": boolean;
+    "checked_at": string;
+
+    /** Creates a new IPBlockCheckResult instance. */
+    constructor($$source: Partial<IPBlockCheckResult> = {}) {
+        if (!("host" in $$source)) {
+            this["host"] = "";
+        }
+        if (!("port" in $$source)) {
+            this["port"] = 0;
+        }
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+        if (!("summary" in $$source)) {
+            this["summary"] = "";
+        }
+        if (!("isp_info" in $$source)) {
+            this["isp_info"] = "";
+        }
+        if (!("location_info" in $$source)) {
+            this["location_info"] = "";
+        }
+        if (!("probes" in $$source)) {
+            this["probes"] = [];
+        }
+        if (!("is_rkn_blocked" in $$source)) {
+            this["is_rkn_blocked"] = false;
+        }
+        if (!("checked_at" in $$source)) {
+            this["checked_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new IPBlockCheckResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): IPBlockCheckResult {
+        const $$createField6_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("probes" in $$parsedSource) {
+            $$parsedSource["probes"] = $$createField6_0($$parsedSource["probes"]);
+        }
+        return new IPBlockCheckResult($$parsedSource as Partial<IPBlockCheckResult>);
+    }
+}
+
 export class NodeSecurityAudit {
     "node_port_protected": boolean;
     "panel_whitelisted": boolean;
@@ -746,6 +807,48 @@ export class PanelSquadItem {
             $$parsedSource["inbound_uuids"] = $$createField3_0($$parsedSource["inbound_uuids"]);
         }
         return new PanelSquadItem($$parsedSource as Partial<PanelSquadItem>);
+    }
+}
+
+export class ProbeNodeResult {
+    "node_id": string;
+    "location": string;
+    "country_code": string;
+    "city": string;
+    "success": boolean;
+    "latency_ms": number;
+    "error"?: string;
+
+    /** Creates a new ProbeNodeResult instance. */
+    constructor($$source: Partial<ProbeNodeResult> = {}) {
+        if (!("node_id" in $$source)) {
+            this["node_id"] = "";
+        }
+        if (!("location" in $$source)) {
+            this["location"] = "";
+        }
+        if (!("country_code" in $$source)) {
+            this["country_code"] = "";
+        }
+        if (!("city" in $$source)) {
+            this["city"] = "";
+        }
+        if (!("success" in $$source)) {
+            this["success"] = false;
+        }
+        if (!("latency_ms" in $$source)) {
+            this["latency_ms"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProbeNodeResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProbeNodeResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProbeNodeResult($$parsedSource as Partial<ProbeNodeResult>);
     }
 }
 
@@ -1008,9 +1111,9 @@ export class ServerStatusResult {
      * Creates a new ServerStatusResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ServerStatusResult {
-        const $$createField2_0 = $$createType1;
-        const $$createField3_0 = $$createType3;
-        const $$createField11_0 = $$createType5;
+        const $$createField2_0 = $$createType3;
+        const $$createField3_0 = $$createType5;
+        const $$createField11_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("metrics" in $$parsedSource) {
             $$parsedSource["metrics"] = $$createField2_0($$parsedSource["metrics"]);
@@ -1027,8 +1130,10 @@ export class ServerStatusResult {
 
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
-const $$createType1 = ServerMetrics.createFrom;
-const $$createType2 = ContainerInfo.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = BackupInfo.createFrom;
+const $$createType1 = ProbeNodeResult.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = ServerMetrics.createFrom;
+const $$createType4 = ContainerInfo.createFrom;
 const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = BackupInfo.createFrom;
+const $$createType7 = $Create.Array($$createType6);

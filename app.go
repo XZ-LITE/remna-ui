@@ -11,6 +11,7 @@ import (
 	"remna-ui/internal/admin"
 	"remna-ui/internal/dns"
 	"remna-ui/internal/generator"
+	"remna-ui/internal/probe"
 	"remna-ui/internal/remnawave"
 	"remna-ui/internal/ssh"
 	"remna-ui/internal/types"
@@ -34,6 +35,10 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 
 func (a *App) CheckDNS(domain string) types.DNSResult {
 	return dns.CheckDNS(domain)
+}
+
+func (a *App) CheckIPBlock(host string, port int) types.IPBlockCheckResult {
+	return probe.CheckIPBlock(host, port)
 }
 
 func (a *App) TestSSH(host string, port int, user, password, keyPath string) types.SSHTestResult {
