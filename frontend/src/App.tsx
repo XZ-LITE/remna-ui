@@ -5551,6 +5551,21 @@ export function App() {
                                         <span>{wizardIPResult.location_info}</span>
                                       </span>
                                     )}
+                                    {wizardIPResult.is_vpn_detected && wizardIPResult.client_country && (
+                                      <span
+                                        className="server-chip"
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "#38bdf8",
+                                          borderColor: "rgba(56, 189, 248, 0.35)",
+                                          background: "rgba(56, 189, 248, 0.08)",
+                                        }}
+                                        title={`Ваш ПК подключен через VPN (${wizardIPResult.client_country})`}
+                                      >
+                                        <Globe size={10} />
+                                        <span>VPN: {wizardIPResult.client_country}</span>
+                                      </span>
+                                    )}
                                     <button
                                       type="button"
                                       className="win-button"

@@ -541,6 +541,8 @@ export namespace types {
 	    summary: string;
 	    isp_info?: string;
 	    location_info?: string;
+	    client_country?: string;
+	    is_vpn_detected: boolean;
 	    probes: ProbeNodeResult[];
 	    is_rkn_blocked: boolean;
 	    checked_at: string;
@@ -557,6 +559,8 @@ export namespace types {
 	        this.summary = source["summary"];
 	        this.isp_info = source["isp_info"];
 	        this.location_info = source["location_info"];
+	        this.client_country = source["client_country"];
+	        this.is_vpn_detected = source["is_vpn_detected"];
 	        this.probes = this.convertValues(source["probes"], ProbeNodeResult);
 	        this.is_rkn_blocked = source["is_rkn_blocked"];
 	        this.checked_at = source["checked_at"];

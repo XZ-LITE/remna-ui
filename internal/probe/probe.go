@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"remna-ui/internal/types"
@@ -52,13 +53,34 @@ func CheckIPBlock(host string, port int) types.IPBlockCheckResult {
 		}
 	}
 
-	// 1. Gather ISP and Geolocation in parallel or sequentially
-	ispInfo, locationInfo := queryGeoIP(cleanHost)
+	// 1. Gather Target GeoIP and Client Egress Location in parallel
+	var (
+		ispInfo       string
+		locationInfo  string
+		clientCC      string
+		clientCountry string
+		clientISP     string
+	)
 
-	// 2. Perform Local TCP Probe (from this machine)
-	localRes := runLocalProbe(cleanHost, port)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		ispInfo, locationInfo = queryGeoIP(cleanHost)
+	}()
+	go func() {
+		defer wg.Done()
+		clientCC, clientCountry, clientISP = queryClientGeoIP()
+	}()
+	wg.Wait()
 
-	// 3. Perform Distributed Remote Probes via Check-Host
+	// Detect if user PC is exiting through a foreign country (VPN / Proxy / Tunnel)
+	isVPNDetected := clientCC != "" && clientCC != "RU"
+
+	// 2. Perform Local TCP Probe (from this machine, aware of VPN egress)
+	localRes := runLocalProbe(cleanHost, port, isVPNDetected, clientCountry, clientISP)
+
+	// 3. Perform Distributed Remote Probes via Check-Host (physically in Moscow, SPb, and Germany)
 	remoteProbes, _ := queryCheckHost(cleanHost, port)
 
 	// Combine probes
@@ -66,15 +88,24 @@ func CheckIPBlock(host string, port int) types.IPBlockCheckResult {
 	allProbes = append(allProbes, localRes)
 	allProbes = append(allProbes, remoteProbes...)
 
-	// 4. Classify Verdict
-	return classifyResults(cleanHost, port, localRes, remoteProbes, ispInfo, locationInfo, allProbes, now)
+	// 4. Classify Verdict with VPN-awareness
+	return classifyResults(cleanHost, port, localRes, remoteProbes, ispInfo, locationInfo, clientCountry, isVPNDetected, allProbes, now)
 }
 
-func runLocalProbe(host string, port int) types.ProbeNodeResult {
+func runLocalProbe(host string, port int, isVPNDetected bool, clientCountry, clientISP string) types.ProbeNodeResult {
 	start := time.Now()
 	target := net.JoinHostPort(host, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", target, 2500*time.Millisecond)
 	latency := int(time.Since(start).Milliseconds())
+
+	locName := "Локальный ПК (Ваш провайдер)"
+	cityName := "Текущий узел"
+	if isVPNDetected && clientCountry != "" {
+		locName = fmt.Sprintf("Локальный ПК (VPN: %s)", clientCountry)
+		if clientISP != "" {
+			cityName = fmt.Sprintf("Шлюз: %s", clientISP)
+		}
+	}
 
 	if err != nil {
 		errStr := "Таймаут соединения"
@@ -85,9 +116,9 @@ func runLocalProbe(host string, port int) types.ProbeNodeResult {
 		}
 		return types.ProbeNodeResult{
 			NodeID:      "local_pc",
-			Location:    "Локальный ПК (Ваш провайдер)",
+			Location:    locName,
 			CountryCode: "local",
-			City:        "Текущий узел",
+			City:        cityName,
 			Success:     false,
 			LatencyMs:   0,
 			Error:       errStr,
@@ -101,9 +132,9 @@ func runLocalProbe(host string, port int) types.ProbeNodeResult {
 
 	return types.ProbeNodeResult{
 		NodeID:      "local_pc",
-		Location:    "Локальный ПК (Ваш провайдер)",
+		Location:    locName,
 		CountryCode: "local",
-		City:        "Текущий узел",
+		City:        cityName,
 		Success:     true,
 		LatencyMs:   latency,
 	}
@@ -151,6 +182,39 @@ func queryGeoIP(host string) (string, string) {
 	}
 	location := fmt.Sprintf("%s, %s", data.City, data.Country)
 	return isp, location
+}
+
+func queryClientGeoIP() (string, string, string) {
+	url := fmt.Sprintf("%s/?fields=status,country,countryCode,city,isp,org,as", ipAPIBase)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
+	if err != nil {
+		return "", "", ""
+	}
+	req.Header.Set("User-Agent", "RemnaUI-Probe/2.0")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", "", ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", ""
+	}
+
+	var data ipAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil || data.Status != "success" {
+		return "", "", ""
+	}
+
+	isp := data.ISP
+	if data.AS != "" {
+		asParts := strings.SplitN(data.AS, " ", 2)
+		if len(asParts) > 0 {
+			isp = fmt.Sprintf("%s (%s)", data.ISP, asParts[0])
+		}
+	}
+	return data.CountryCode, data.Country, isp
 }
 
 type checkHostInitResponse struct {
@@ -297,6 +361,8 @@ func classifyResults(
 	remoteProbes []types.ProbeNodeResult,
 	ispInfo string,
 	locationInfo string,
+	clientCountry string,
+	isVPNDetected bool,
 	allProbes []types.ProbeNodeResult,
 	checkedAt string,
 ) types.IPBlockCheckResult {
@@ -318,26 +384,40 @@ func classifyResults(
 		}
 	}
 
-	// Incorporate local probe if user is in Russia
-	// If remote RU probes are missing due to rate limiting, local probe serves as baseline
 	status := "clean"
 	summary := ""
 	isRKNBlocked := false
 
 	if ruTotalCount > 0 {
-		if euChecked && euSuccess && ruSuccessCount == 0 && !local.Success {
-			// Definitive TSPU/RKN block: EU connects fine, but RU and local fail
+		if euChecked && euSuccess && ruSuccessCount == 0 {
+			// Definitive TSPU/RKN block: EU connects fine, but ALL Russian probes failed!
+			// Independent probes in Moscow (AS14576, AS210644) and SPb (AS207713) confirm the block.
 			status = "blocked"
 			isRKNBlocked = true
-			summary = "Высокий риск блокировки ТСПУ / РКН: сервер доступен из Европы, но полностью заблокирован из России (таймаут во всех российских точках). Рекомендуется запросить замену IP у хостинга."
-		} else if ruSuccessCount == 0 && !local.Success && (!euChecked || !euSuccess) {
+			if local.Success {
+				vpnNote := "активного VPN / прокси на вашем компьютере"
+				if isVPNDetected && clientCountry != "" {
+					vpnNote = fmt.Sprintf("активного VPN-туннеля (%s)", clientCountry)
+				}
+				summary = fmt.Sprintf("Обнаружена блокировка ТСПУ / РКН в России: независимые контрольные узлы в Москве и Санкт-Петербурге не могут подключиться к серверу (таймаут). С вашего ПК соединение проходит только из-за %s. Пользователи из РФ без VPN подключиться не смогут! Рекомендуется сменить IP.", vpnNote)
+			} else {
+				summary = "Высокий риск блокировки ТСПУ / РКН: сервер доступен из Европы, но полностью заблокирован из России (таймаут во всех российских точках). Рекомендуется запросить замену IP у хостинга."
+			}
+		} else if ruSuccessCount == 0 && (!euChecked || !euSuccess) && !local.Success {
 			// Completely offline or firewall closed
 			status = "offline"
 			summary = fmt.Sprintf("Сервер не отвечает на порту %d ни из РФ, ни из зарубежных точек. Проверьте, включен ли VPS и открыт ли сетевой экран (firewall).", port)
-		} else if ruSuccessCount == ruTotalCount && (local.Success || ruSuccessCount >= 2) {
-			// All RU probes passed
+		} else if ruSuccessCount == 0 && (!euChecked || !euSuccess) && local.Success {
+			status = "partial"
+			summary = fmt.Sprintf("Сервер откликается только локально, но недоступен с публичных контрольных точек (порт %d). Проверьте настройки фаервола VPS.", port)
+		} else if ruSuccessCount == ruTotalCount {
+			// All RU probes passed!
 			status = "clean"
-			summary = "IP-адрес свободен и отлично доступен из России. Пакеты проходят без фильтрации ТСПУ. Можно безопасно развертывать сервер."
+			if isVPNDetected && clientCountry != "" {
+				summary = fmt.Sprintf("IP-адрес свободен и отлично доступен из России. Пакеты успешно проходят через контрольные узлы Москвы и СПб без фильтрации ТСПУ (ваше локальное соединение через VPN: %s также подтверждает открытый порт %d).", clientCountry, port)
+			} else {
+				summary = "IP-адрес свободен и отлично доступен из России. Пакеты проходят без фильтрации ТСПУ. Можно безопасно развертывать сервер."
+			}
 		} else if ruSuccessCount > 0 && ruSuccessCount < ruTotalCount {
 			// Partial block (some RU ISPs pass, others drop)
 			status = "partial"
@@ -348,10 +428,15 @@ func classifyResults(
 			summary = "IP-адрес доступен из России. Соединение подтверждено распределенными зондами."
 		}
 	} else {
-		// Fallback when remote probes couldn't be queried
+		// Fallback when remote probes couldn't be queried (e.g. rate limit or offline check-host)
 		if local.Success {
-			status = "clean"
-			summary = fmt.Sprintf("IP-адрес доступен с вашего ПК на порту %d (задержка %d ms). Локальный провайдер соединяется успешно.", port, local.LatencyMs)
+			if isVPNDetected && clientCountry != "" {
+				status = "partial"
+				summary = fmt.Sprintf("Внимание: внешние контрольные узлы были временно недоступны. С вашего ПК порт %d отвечает, но на компьютере активен VPN (%s). Данная проверка не может гарантировать отсутствие блокировки у пользователей в РФ без VPN! Рекомендуется отключить VPN и повторить опрос.", port, clientCountry)
+			} else {
+				status = "clean"
+				summary = fmt.Sprintf("IP-адрес доступен с вашего ПК на порту %d (задержка %d ms). Локальный провайдер соединяется успешно.", port, local.LatencyMs)
+			}
 		} else {
 			status = "offline"
 			summary = fmt.Sprintf("Сервер не ответил на локальное TCP-рукопожатие на порту %d. Проверьте адрес и сетевой экран.", port)
@@ -359,14 +444,16 @@ func classifyResults(
 	}
 
 	return types.IPBlockCheckResult{
-		Host:         host,
-		Port:         port,
-		Status:       status,
-		Summary:      summary,
-		ISPInfo:      ispInfo,
-		LocationInfo: locationInfo,
-		Probes:       allProbes,
-		IsRKNBlocked: isRKNBlocked,
-		CheckedAt:    checkedAt,
+		Host:          host,
+		Port:          port,
+		Status:        status,
+		Summary:       summary,
+		ISPInfo:       ispInfo,
+		LocationInfo:  locationInfo,
+		ClientCountry: clientCountry,
+		IsVPNDetected: isVPNDetected,
+		Probes:        allProbes,
+		IsRKNBlocked:  isRKNBlocked,
+		CheckedAt:     checkedAt,
 	}
 }

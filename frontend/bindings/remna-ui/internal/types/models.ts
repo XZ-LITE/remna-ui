@@ -539,6 +539,8 @@ export class IPBlockCheckResult {
     "summary": string;
     "isp_info": string;
     "location_info": string;
+    "client_country"?: string;
+    "is_vpn_detected": boolean;
     "probes": ProbeNodeResult[];
     "is_rkn_blocked": boolean;
     "checked_at": string;
@@ -563,6 +565,9 @@ export class IPBlockCheckResult {
         if (!("location_info" in $$source)) {
             this["location_info"] = "";
         }
+        if (!("is_vpn_detected" in $$source)) {
+            this["is_vpn_detected"] = false;
+        }
         if (!("probes" in $$source)) {
             this["probes"] = [];
         }
@@ -580,10 +585,10 @@ export class IPBlockCheckResult {
      * Creates a new IPBlockCheckResult instance from a string or object.
      */
     static createFrom($$source: any = {}): IPBlockCheckResult {
-        const $$createField6_0 = $$createType2;
+        const $$createField8_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("probes" in $$parsedSource) {
-            $$parsedSource["probes"] = $$createField6_0($$parsedSource["probes"]);
+            $$parsedSource["probes"] = $$createField8_0($$parsedSource["probes"]);
         }
         return new IPBlockCheckResult($$parsedSource as Partial<IPBlockCheckResult>);
     }

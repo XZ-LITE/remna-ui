@@ -12,6 +12,7 @@ import {
   Check,
   Copy,
   Info,
+  Globe,
 } from "lucide-react";
 import { types } from "../../../wailsjs/go/models";
 
@@ -32,6 +33,8 @@ interface IPBlockData {
   summary: string;
   isp_info?: string;
   location_info?: string;
+  client_country?: string;
+  is_vpn_detected?: boolean;
   probes?: IPProbeItem[];
   is_rkn_blocked?: boolean;
   checked_at?: string;
@@ -182,6 +185,21 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
                       <span className="server-chip" style={{ fontSize: "11px" }}>
                         <MapPin size={10} />
                         <span>{result.location_info}</span>
+                      </span>
+                    )}
+                    {result.is_vpn_detected && result.client_country && (
+                      <span
+                        className="server-chip"
+                        style={{
+                          fontSize: "11px",
+                          color: "#38bdf8",
+                          borderColor: "rgba(56, 189, 248, 0.35)",
+                          background: "rgba(56, 189, 248, 0.08)",
+                        }}
+                        title={`Ваш ПК подключен через VPN или прокси-шлюз в ${result.client_country}`}
+                      >
+                        <Globe size={10} />
+                        <span>ПК через VPN: {result.client_country}</span>
                       </span>
                     )}
                   </div>

@@ -574,6 +574,21 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
                             <span>{ipCheckResult.isp_info}</span>
                           </span>
                         )}
+                        {ipCheckResult.is_vpn_detected && ipCheckResult.client_country && (
+                          <span
+                            className="server-chip"
+                            style={{
+                              fontSize: "11px",
+                              color: "#38bdf8",
+                              borderColor: "rgba(56, 189, 248, 0.35)",
+                              background: "rgba(56, 189, 248, 0.08)",
+                            }}
+                            title={`Ваш ПК подключен через VPN (${ipCheckResult.client_country})`}
+                          >
+                            <Globe size={10} />
+                            <span>VPN: {ipCheckResult.client_country}</span>
+                          </span>
+                        )}
                         <button
                           type="button"
                           className="win-button"
