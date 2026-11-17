@@ -1791,6 +1791,31 @@ if [ -x ~/.acme.sh/acme.sh ]; then
 
   echo "SSL сертификаты Let's Encrypt (acme.sh) успешно обновлены!"
 
+elif command -v docker >/dev/null 2>&1 && [ -d /etc/letsencrypt/live ]; then
+
+  docker stop remnawave-nginx 2>/dev/null || true
+
+  echo ">>> Обновление SSL сертификатов через Docker Certbot..."
+
+  docker run --rm -p 80:80 \
+    -v /etc/letsencrypt:/etc/letsencrypt \
+    -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+    certbot/certbot renew --non-interactive 2>&1 || true
+
+  DOMAIN=$(ls -1 /etc/letsencrypt/live/ 2>/dev/null | grep -v 'README' | head -n 1)
+
+  if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+
+    cp -fL "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" /opt/remnawave/nginx/fullchain.pem 2>/dev/null || true
+
+    cp -fL "/etc/letsencrypt/live/$DOMAIN/privkey.pem" /opt/remnawave/nginx/privkey.key 2>/dev/null || true
+
+  fi
+
+  docker start remnawave-nginx 2>/dev/null || true
+
+  echo "SSL сертификаты Let's Encrypt (Docker Certbot) успешно обновлены!"
+
 elif command -v certbot >/dev/null 2>&1; then
 
   docker stop remnawave-nginx 2>/dev/null || true

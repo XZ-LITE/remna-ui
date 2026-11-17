@@ -564,19 +564,33 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 				// Free port 80 before certbot runs
 				_ = runRemoteCmd("Освобождение портов для SSL проверки", "docker stop remnawave-nginx 2>/dev/null || true")
 
-				// Let's Encrypt certificate acquisition via certbot
+				// Let's Encrypt certificate acquisition via certbot (Docker-first with system fallback)
 				certbotCmd := fmt.Sprintf(`if [ -f /etc/letsencrypt/live/%s/fullchain.pem ]; then `+
 					`cp -fL /etc/letsencrypt/live/%s/fullchain.pem %s/nginx/fullchain.pem && `+
 					`cp -fL /etc/letsencrypt/live/%s/privkey.pem %s/nginx/privkey.key && `+
 					`echo "Использован существующий сертификат Let's Encrypt!"; `+
 					`else `+
-					`which certbot >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq certbot >/dev/null 2>&1); `+
+					`docker stop remnawave-nginx 2>/dev/null || true; `+
+					`CERT_SUCCESS=0; `+
+					`if command -v docker >/dev/null 2>&1; then `+
+					`echo "Запрос сертификата Let's Encrypt через официальный Docker Certbot..."; `+
+					`docker run --rm -p 80:80 -v /etc/letsencrypt:/etc/letsencrypt -v /var/lib/letsencrypt:/var/lib/letsencrypt certbot/certbot certonly --standalone %s --agree-tos --register-unsafely-without-email --non-interactive 2>&1 && CERT_SUCCESS=1 || true; `+
+					`fi; `+
+					`if [ "$CERT_SUCCESS" -eq 0 ] && [ ! -f /etc/letsencrypt/live/%s/fullchain.pem ]; then `+
+					`echo "Docker Certbot не завершился успехом, попытка через системный пакет..."; `+
+					`which certbot >/dev/null 2>&1 || (apt-get update -qq && (apt-get install -y -qq certbot || (apt-get install -y -qq software-properties-common && add-apt-repository -y universe && apt-get update -qq && apt-get install -y -qq certbot) || snap install --classic certbot) >/dev/null 2>&1) || true; `+
 					`if command -v certbot >/dev/null 2>&1; then `+
-					`certbot certonly --standalone %s --agree-tos --register-unsafely-without-email --non-interactive 2>/dev/null && `+
+					`certbot certonly --standalone %s --agree-tos --register-unsafely-without-email --non-interactive 2>&1 && CERT_SUCCESS=1 || true; `+
+					`fi; `+
+					`fi; `+
+					`if [ -f /etc/letsencrypt/live/%s/fullchain.pem ]; then `+
 					`cp -fL /etc/letsencrypt/live/%s/fullchain.pem %s/nginx/fullchain.pem && `+
 					`cp -fL /etc/letsencrypt/live/%s/privkey.pem %s/nginx/privkey.key && `+
-					`echo "Сертификат Let's Encrypt успешно получен!" || echo "Let's Encrypt не смог выпустить сертификат (проверьте DNS), используется самоподписанный SSL."; fi; fi`,
-					panelDomain, panelDomain, targetDir, panelDomain, targetDir, certbotDomains, panelDomain, targetDir, panelDomain, targetDir)
+					`echo "Сертификат Let's Encrypt успешно получен и применен к Nginx!"; `+
+					`else `+
+					`echo "Let's Encrypt не смог выпустить сертификат (проверьте A-записи домена в DNS и отключите Cloudflare Proxy/Orange Cloud на момент верификации), используется первичный самоподписанный SSL."; `+
+					`fi; fi`,
+					panelDomain, panelDomain, targetDir, panelDomain, targetDir, certbotDomains, panelDomain, certbotDomains, panelDomain, panelDomain, targetDir, panelDomain, targetDir)
 				_ = runRemoteCmd("Получение доверенного SSL сертификата Let's Encrypt", certbotCmd)
 			}
 		} else {
@@ -1147,36 +1161,38 @@ func deployStealthAllInOne(
 
 	// 2. SSL Setup
 	emitLog("step", "Выпуск и подготовка SSL-сертификатов Let's Encrypt...")
+	domainsArg := fmt.Sprintf("-d %s", panelDomain)
+	if subDomain != "" && subDomain != panelDomain {
+		domainsArg += fmt.Sprintf(" -d %s", subDomain)
+	}
+	if decoyDomain != "" && decoyDomain != panelDomain && decoyDomain != subDomain {
+		domainsArg += fmt.Sprintf(" -d %s", decoyDomain)
+	}
+
 	sslPrepCmd := fmt.Sprintf(`
 mkdir -p %s/ssl
 docker stop remnawave-nginx remnanode 2>/dev/null || true
 systemctl stop nginx apache2 caddy 2>/dev/null || true
 
-openssl req -x509 -nodes -days 365 -newkey rsa:2048   -keyout %s/ssl/privkey.key -out %s/ssl/fullchain.pem   -subj '/CN=%s' 2>/dev/null || true
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout %s/ssl/privkey.key -out %s/ssl/fullchain.pem -subj '/CN=%s' 2>/dev/null || true
 
-which certbot >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq certbot >/dev/null 2>&1 || true)
-if command -v certbot >/dev/null 2>&1; then
-  DOMAINS_ARG="-d %s"
-`, targetDir, targetDir, targetDir, panelDomain, panelDomain)
-
-	if subDomain != "" && subDomain != panelDomain {
-		sslPrepCmd += fmt.Sprintf(`  DOMAINS_ARG="$DOMAINS_ARG -d %s"
-`, subDomain)
-	}
-	if decoyDomain != "" && decoyDomain != panelDomain && decoyDomain != subDomain {
-		sslPrepCmd += fmt.Sprintf(`  DOMAINS_ARG="$DOMAINS_ARG -d %s"
-`, decoyDomain)
-	}
-
-	sslPrepCmd += fmt.Sprintf(`
-  certbot certonly --standalone $DOMAINS_ARG --agree-tos --register-unsafely-without-email --non-interactive 2>/dev/null || true
-  if [ -f /etc/letsencrypt/live/%s/fullchain.pem ]; then
-    cp -fL /etc/letsencrypt/live/%s/fullchain.pem %s/ssl/fullchain.pem
-    cp -fL /etc/letsencrypt/live/%s/privkey.pem %s/ssl/privkey.key
-    echo "Сертификат Let's Encrypt успешно получен и скопирован!"
+DOMAINS_ARG="%s"
+CERT_SUCCESS=0
+if command -v docker >/dev/null 2>&1; then
+  docker run --rm -p 80:80 -v /etc/letsencrypt:/etc/letsencrypt -v /var/lib/letsencrypt:/var/lib/letsencrypt certbot/certbot certonly --standalone $DOMAINS_ARG --agree-tos --register-unsafely-without-email --non-interactive 2>&1 && CERT_SUCCESS=1 || true
+fi
+if [ "$CERT_SUCCESS" -eq 0 ] && [ ! -f /etc/letsencrypt/live/%s/fullchain.pem ]; then
+  which certbot >/dev/null 2>&1 || (apt-get update -qq && (apt-get install -y -qq certbot || (apt-get install -y -qq software-properties-common && add-apt-repository -y universe && apt-get update -qq && apt-get install -y -qq certbot) || snap install --classic certbot) >/dev/null 2>&1 || true)
+  if command -v certbot >/dev/null 2>&1; then
+    certbot certonly --standalone $DOMAINS_ARG --agree-tos --register-unsafely-without-email --non-interactive 2>&1 || true
   fi
 fi
-`, panelDomain, panelDomain, targetDir, panelDomain, targetDir)
+if [ -f /etc/letsencrypt/live/%s/fullchain.pem ]; then
+  cp -fL /etc/letsencrypt/live/%s/fullchain.pem %s/ssl/fullchain.pem
+  cp -fL /etc/letsencrypt/live/%s/privkey.pem %s/ssl/privkey.key
+  echo "Сертификат Let's Encrypt успешно получен и скопирован!"
+fi
+`, targetDir, targetDir, targetDir, panelDomain, domainsArg, panelDomain, panelDomain, panelDomain, targetDir, panelDomain, targetDir)
 	_ = runRemoteCmd("Настройка SSL сертификатов", sslPrepCmd)
 
 	// 3. Jolymmiles Custom Xray Core (if requested)
