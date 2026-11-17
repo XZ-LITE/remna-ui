@@ -124,6 +124,7 @@ import {
   Package,
   BookOpen,
   GitBranch,
+  User,
 } from "lucide-react";
 
 
@@ -478,6 +479,12 @@ export function App() {
 
   const [xrayCoreType, setXrayCoreType] = useState<"official" | "jolymmiles">("jolymmiles");
 
+  // Admin Account Creation Mode in Wizard Step 2 ("auto" | "custom" | "manual")
+  const [adminCreationMode, setAdminCreationMode] = useState<"auto" | "custom" | "manual">("auto");
+  const [adminUsername, setAdminUsername] = useState<string>("admin");
+  const [adminPassword, setAdminPassword] = useState<string>("");
+  const [showAdminPassword, setShowAdminPassword] = useState<boolean>(false);
+
   const [customPanelIp, setCustomPanelIp] = useState<string>("");
 
   const [auditModal, setAuditModal] = useState<{
@@ -580,7 +587,24 @@ export function App() {
   const [deployedAdminUser, setDeployedAdminUser] = useState<string>("");
   const [deployedAdminPass, setDeployedAdminPass] = useState<string>("");
   const [deployedSubUrl, setDeployedSubUrl] = useState<string>("");
+  const [deployedAdminMode, setDeployedAdminMode] = useState<string>("auto");
   const [showDeployedPass, setShowDeployedPass] = useState<boolean>(false);
+
+  const generateClientSafePassword = useCallback(() => {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+    const uppers = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const lowers = "abcdefghijklmnopqrstuvwxyz";
+    const digits = "0123456789";
+    let res = "";
+    res += uppers[Math.floor(Math.random() * uppers.length)];
+    res += lowers[Math.floor(Math.random() * lowers.length)];
+    res += digits[Math.floor(Math.random() * digits.length)];
+    for (let i = 0; i < 25; i++) {
+      res += chars[Math.floor(Math.random() * chars.length)];
+    }
+    const arr = res.split("").sort(() => 0.5 - Math.random());
+    setAdminPassword(arr.join(""));
+  }, []);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -894,6 +918,7 @@ export function App() {
       setDeployFinished(true);
       setDeploySuccess(data.success);
       if (data.success) {
+        if (data.admin_creation_mode) setDeployedAdminMode(data.admin_creation_mode);
         if (data.admin_user) setDeployedAdminUser(data.admin_user);
         if (data.admin_pass) setDeployedAdminPass(data.admin_pass);
         if (data.sub_url) setDeployedSubUrl(data.sub_url);
@@ -1489,6 +1514,19 @@ export function App() {
       return;
     }
 
+    if (preset !== "node-only" && components.includes("panel")) {
+      if (adminCreationMode === "custom") {
+        if (!adminUsername.trim()) {
+          addToast("error", "Укажите логин суперадминистратора.");
+          return;
+        }
+        if (adminPassword.length < 24 || !/[A-Z]/.test(adminPassword) || !/[a-z]/.test(adminPassword) || !/[0-9]/.test(adminPassword)) {
+          addToast("error", "Пароль суперадминистратора должен содержать минимум 24 символа, включая заглавную букву, строчную букву и цифру (политика безопасности Remnawave).");
+          return;
+        }
+      }
+    }
+
     if (useCloudflareDns && !cloudflareToken.trim()) {
       addToast("error", "Включен выпуск SSL через Cloudflare DNS, но не указан Cloudflare API токен.");
       return;
@@ -1595,6 +1633,12 @@ export function App() {
       enable_tinyauth: false,
 
       performance_optimization: optimizePerformance,
+
+      admin_creation_mode: adminCreationMode,
+
+      admin_username: adminCreationMode === "custom" ? adminUsername.trim() : "admin",
+
+      admin_password: adminCreationMode === "custom" ? adminPassword.trim() : "",
 
     });
 
@@ -4627,7 +4671,118 @@ export function App() {
 
                         </div>
 
+                        {preset !== "node-only" && components.includes("panel") && (
+                          <div className="settings-group">
+                            <div className="settings-group-title">Учетная запись суперадминистратора</div>
+                            <div className="settings-card-group">
+                              <SettingsCard
+                                icon={<User size={18} />}
+                                title="Способ создания аккаунта в Remnawave"
+                                description="Выберите, как будет инициализирован доступ к веб-панели управления."
+                                action={
+                                  <div style={{ display: "flex", gap: "6px" }}>
+                                    <button
+                                      type="button"
+                                      className={`win-button ${adminCreationMode === "auto" ? "win-button-accent" : ""}`}
+                                      style={{ height: "30px", fontSize: "12px", padding: "0 12px" }}
+                                      onClick={() => setAdminCreationMode("auto")}
+                                    >
+                                      Автоматически
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`win-button ${adminCreationMode === "custom" ? "win-button-accent" : ""}`}
+                                      style={{ height: "30px", fontSize: "12px", padding: "0 12px" }}
+                                      onClick={() => {
+                                        setAdminCreationMode("custom");
+                                        if (!adminPassword) generateClientSafePassword();
+                                      }}
+                                    >
+                                      Свои логин и пароль
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`win-button ${adminCreationMode === "manual" ? "win-button-accent" : ""}`}
+                                      style={{ height: "30px", fontSize: "12px", padding: "0 12px" }}
+                                      onClick={() => setAdminCreationMode("manual")}
+                                    >
+                                      В браузере вручную
+                                    </button>
+                                  </div>
+                                }
+                              >
+                                {adminCreationMode === "auto" && (
+                                  <div style={{ marginTop: "12px", fontSize: "12px", color: "var(--win-text-secondary)" }}>
+                                    Программа автоматически сгенерирует надежный пароль (28 символов) и создаст учетную запись суперадминистратора через API при первом запуске. Готовые реквизиты для входа будут показаны на финальном экране.
+                                  </div>
+                                )}
 
+                                {adminCreationMode === "custom" && (
+                                  <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                                      <div style={{ width: "160px", fontSize: "12px", color: "var(--win-text-secondary)" }}>
+                                        Имя пользователя:
+                                      </div>
+                                      <input
+                                        type="text"
+                                        className="win-textbox"
+                                        style={{ width: "220px" }}
+                                        value={adminUsername}
+                                        onChange={(e) => setAdminUsername(e.target.value)}
+                                        placeholder="admin"
+                                      />
+                                    </div>
+                                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                                      <div style={{ width: "160px", fontSize: "12px", color: "var(--win-text-secondary)" }}>
+                                        Пароль администратора:
+                                      </div>
+                                      <div style={{ position: "relative", width: "320px", display: "flex", alignItems: "center" }}>
+                                        <input
+                                          type={showAdminPassword ? "text" : "password"}
+                                          className="win-textbox"
+                                          style={{ width: "100%", paddingRight: "70px", fontFamily: showAdminPassword ? "monospace" : "inherit" }}
+                                          value={adminPassword}
+                                          onChange={(e) => setAdminPassword(e.target.value)}
+                                          placeholder="Минимум 24 символа (Aa1...)"
+                                        />
+                                        <div style={{ position: "absolute", right: "6px", display: "flex", gap: "4px" }}>
+                                          <button
+                                            type="button"
+                                            className="table-action-btn"
+                                            onClick={() => setShowAdminPassword(!showAdminPassword)}
+                                            title={showAdminPassword ? "Скрыть пароль" : "Показать пароль"}
+                                          >
+                                            {showAdminPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="table-action-btn"
+                                            onClick={generateClientSafePassword}
+                                            title="Сгенерировать надежный пароль"
+                                          >
+                                            <Dices size={14} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div style={{ fontSize: "11px", color: "var(--win-text-secondary)", marginTop: "2px" }}>
+                                      Требование безопасности Remnawave: длина не менее 24 символов, обязательное наличие заглавных букв, строчных букв и цифр.
+                                    </div>
+                                  </div>
+                                )}
+
+                                {adminCreationMode === "manual" && (
+                                  <InfoBar
+                                    severity="info"
+                                    title="Регистрация через веб-интерфейс"
+                                    message="Автоматическое создание пользователя будет отключено. После завершения развертывания вы сможете перейти по ссылке в браузер и самостоятельно пройти первичную регистрацию супер-админа."
+                                    style={{ marginTop: "12px", marginBottom: "0" }}
+                                  />
+                                )}
+                              </SettingsCard>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Security & Gate via SettingsExpander */}
 
@@ -5879,7 +6034,7 @@ export function App() {
 
                         )}
 
-                        {(deployedAdminUser || deployedAdminPass || deployedSubUrl) && preset !== "node-only" && (
+                        {(deployedAdminUser || deployedAdminPass || deployedSubUrl) && preset !== "node-only" && deployedAdminMode !== "manual" && (
                           <div
                             style={{
                               margin: "12px 0",
@@ -5970,6 +6125,53 @@ export function App() {
                               </div>
                             )}
 
+                            {deployedSubUrl && (
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", fontSize: "12px", borderTop: "1px solid var(--win-card-row-border)", paddingTop: "8px" }}>
+                                <span style={{ color: "var(--win-text-secondary)" }}>Страница клиентских подписок:</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <code style={{ background: "var(--win-chip-bg)", padding: "2px 8px", borderRadius: "4px", maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    {deployedSubUrl}
+                                  </code>
+                                  <button
+                                    className="win-button"
+                                    style={{ height: "24px", padding: "0 8px", fontSize: "11px" }}
+                                    onClick={() => handleCopy(deployedSubUrl, "Ссылка на подписку", "cred-sub")}
+                                  >
+                                    {copiedKey === "cred-sub" ? (
+                                      <span style={{ color: "#34d399", fontWeight: 600 }}>Скопировано!</span>
+                                    ) : (
+                                      <>
+                                        <Copy size={11} />
+                                        <span>Копировать</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {deployedAdminMode === "manual" && preset !== "node-only" && (
+                          <div
+                            style={{
+                              margin: "12px 0",
+                              padding: "14px 16px",
+                              background: "rgba(96, 205, 255, 0.08)",
+                              border: "1px solid rgba(96, 205, 255, 0.25)",
+                              borderRadius: "8px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "10px",
+                            }}
+                          >
+                            <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--win-accent)", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <User size={14} />
+                              <span>Регистрация суперадминистратора</span>
+                            </div>
+                            <div style={{ fontSize: "12px", color: "var(--win-text-secondary)", lineHeight: "1.5" }}>
+                              Вы выбрали самостоятельную регистрацию. Перейдите в веб-интерфейс по ссылке выше и завершите создание учетной записи администратора в окне первоначальной настройки Remnawave.
+                            </div>
                             {deployedSubUrl && (
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", fontSize: "12px", borderTop: "1px solid var(--win-card-row-border)", paddingTop: "8px" }}>
                                 <span style={{ color: "var(--win-text-secondary)" }}>Страница клиентских подписок:</span>

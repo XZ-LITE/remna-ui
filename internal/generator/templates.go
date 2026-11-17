@@ -38,7 +38,7 @@ func RandomAdminPassword(length int) string {
 		upper   = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 		lower   = "abcdefghijkmnopqrstuvwxyz"
 		digits  = "23456789"
-		symbols = "!@#$%^&*-_"
+		symbols = "_-"
 	)
 	all := upper + lower + digits + symbols
 

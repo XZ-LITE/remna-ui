@@ -373,6 +373,21 @@ export class DeploymentPlan {
      */
     "performance_optimization": boolean;
 
+    /**
+     * "auto", "custom", "manual"
+     */
+    "admin_creation_mode": string;
+
+    /**
+     * custom admin username
+     */
+    "admin_username": string;
+
+    /**
+     * custom admin password
+     */
+    "admin_password": string;
+
     /** Creates a new DeploymentPlan instance. */
     constructor($$source: Partial<DeploymentPlan> = {}) {
         if (!("components" in $$source)) {
@@ -473,6 +488,15 @@ export class DeploymentPlan {
         }
         if (!("performance_optimization" in $$source)) {
             this["performance_optimization"] = false;
+        }
+        if (!("admin_creation_mode" in $$source)) {
+            this["admin_creation_mode"] = "";
+        }
+        if (!("admin_username" in $$source)) {
+            this["admin_username"] = "";
+        }
+        if (!("admin_password" in $$source)) {
+            this["admin_password"] = "";
         }
 
         Object.assign(this, $$source);

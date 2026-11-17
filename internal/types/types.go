@@ -34,6 +34,9 @@ type DeploymentPlan struct {
 	XrayCoreType            string   `json:"xray_core_type"`            // "official" or "jolymmiles"
 	EnableTinyAuth          bool     `json:"enable_tinyauth"`           // Optional TinyAuth layer
 	PerformanceOptimization bool     `json:"performance_optimization"`  // Valkey Unix Domain Sockets & Postgres 512MB RAM
+	AdminCreationMode       string   `json:"admin_creation_mode"`       // "auto", "custom", "manual"
+	AdminUsername           string   `json:"admin_username"`            // custom admin username
+	AdminPassword           string   `json:"admin_password"`            // custom admin password
 }
 
 type DNSResult struct {
@@ -58,12 +61,13 @@ type GenerateResult struct {
 }
 
 type RemoteDeployResult struct {
-	Success   bool   `json:"success"`
-	AdminUser string `json:"admin_user"`
-	AdminPass string `json:"admin_pass"`
-	PanelURL  string `json:"panel_url"`
-	SubURL    string `json:"sub_url"`
-	Error     string `json:"error"`
+	Success           bool   `json:"success"`
+	AdminCreationMode string `json:"admin_creation_mode"`
+	AdminUser         string `json:"admin_user"`
+	AdminPass         string `json:"admin_pass"`
+	PanelURL          string `json:"panel_url"`
+	SubURL            string `json:"sub_url"`
+	Error             string `json:"error"`
 }
 
 type SavedServer struct {

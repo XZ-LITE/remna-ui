@@ -71,6 +71,7 @@ func (a *App) StartDeployment(plan types.DeploymentPlan) {
 			"error":   errMsg,
 		}
 		if res != nil {
+			payload["admin_creation_mode"] = res.AdminCreationMode
 			payload["admin_user"] = res.AdminUser
 			payload["admin_pass"] = res.AdminPass
 			payload["panel_url"] = res.PanelURL

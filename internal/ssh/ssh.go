@@ -670,14 +670,31 @@ docker compose -f %s/panel/docker-compose.yml logs --tail=15 remnawave || true
 		_ = runRemoteCmd("Синхронизация и проверка PostgreSQL", dbSyncScript)
 	}
 	var classicAdminUser, classicAdminPass string
-	if hasPanel {
-		classicAdminUser = "admin"
-		classicAdminPass = generator.RandomAdminPassword(28)
+	adminMode := plan.AdminCreationMode
+	if adminMode == "" {
+		adminMode = "auto"
 	}
 
-	if hasSub {
-		if hasPanel {
-			subTokenScript := fmt.Sprintf(`
+	if hasPanel {
+		if adminMode == "custom" {
+			classicAdminUser = strings.TrimSpace(plan.AdminUsername)
+			if classicAdminUser == "" {
+				classicAdminUser = "admin"
+			}
+			classicAdminPass = strings.TrimSpace(plan.AdminPassword)
+			if len(classicAdminPass) < 24 {
+				classicAdminPass = generator.RandomAdminPassword(28)
+			}
+		} else if adminMode == "auto" {
+			classicAdminUser = "admin"
+			classicAdminPass = generator.RandomAdminPassword(28)
+		} else { // "manual"
+			classicAdminUser = ""
+			classicAdminPass = ""
+		}
+
+		if adminMode != "manual" {
+			adminSetupScript := fmt.Sprintf(`
 which jq >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1 || true)
 API_BASE="http://127.0.0.1:3000"
 TARGET_DIR="%s"
@@ -720,7 +737,7 @@ extract_token() {
   echo "$json_input" | grep -o "\"${field}\":\"[^\"]*\"" | cut -d'"' -f4 || true
 }
 
-echo "Ожидание готовности API Remnawave для токена подписок..."
+echo "Ожидание готовности API Remnawave..."
 for i in $(seq 1 45); do
   STATUS=$(curl -s --connect-timeout 2 -m 5 "${API_BASE}/api/auth/status" || true)
   if echo "$STATUS" | grep -q '"isConfigured"'; then
@@ -732,24 +749,37 @@ done
 IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" | grep -o '"isConfigured":true' || true)
 TOKEN=""
 if [ -z "$IS_CONFIGURED" ]; then
-  echo "Регистрация администратора Remnawave..."
+  echo "Регистрация администратора Remnawave в API..."
+  cat > /tmp/rw_reg.json << JSON_REG_EOF
+{"username":"${ADMIN_USER}","password":"${ADMIN_PASS}"}
+JSON_REG_EOF
   REG_RES=$(curl -s -X POST "${API_BASE}/api/auth/register" \
     -H "Content-Type: application/json" \
     -H "X-Forwarded-For: 127.0.0.1" \
     -H "X-Forwarded-Proto: https" \
     -H "X-Remnawave-Client-Type: browser" \
-    -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}")
+    --data-binary @/tmp/rw_reg.json)
+  rm -f /tmp/rw_reg.json
+  echo "Ответ API: ${REG_RES}"
   TOKEN=$(extract_token "$REG_RES" "accessToken")
+  if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
+    echo "Суперадминистратор успешно зарегистрирован в базе данных!"
+  fi
 fi
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
   echo "Авторизация администратора Remnawave..."
+  cat > /tmp/rw_login.json << JSON_LOGIN_EOF
+{"username":"${ADMIN_USER}","password":"${ADMIN_PASS}"}
+JSON_LOGIN_EOF
   LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
     -H "Content-Type: application/json" \
     -H "X-Forwarded-For: 127.0.0.1" \
     -H "X-Forwarded-Proto: https" \
     -H "X-Remnawave-Client-Type: browser" \
-    -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}")
+    --data-binary @/tmp/rw_login.json)
+  rm -f /tmp/rw_login.json
+  echo "Ответ API авторизации: ${LOGIN_RES}"
   TOKEN=$(extract_token "$LOGIN_RES" "accessToken")
 fi
 
@@ -764,7 +794,6 @@ CRED_EOF
 chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
 
 if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
-  # 1. Master token for maintenance (scopes: ["*"])
   MASTER_PAYLOAD='{"name":"remna-ui-manager","expiresInDays":3650,"scopes":["*"]}'
   MASTER_RES=$(curl -s --connect-timeout 10 --max-time 30 -X POST "${API_BASE}/api/tokens" \
     -H "Authorization: Bearer ${TOKEN}" \
@@ -779,36 +808,34 @@ if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
     chmod 600 "${TARGET_DIR}/token" 2>/dev/null || true
   fi
 
-  # 2. Subscription page token
-  TOKEN_PAYLOAD='{"name":"subscription-page","expiresInDays":3650,"scopes":["subscription-page-configs:list","subscription-page-configs:get","subscriptions:subpage-config","system:metadata","users:by-username"]}'
-  TOKEN_RES=$(curl -s --connect-timeout 10 --max-time 30 -X POST "${API_BASE}/api/tokens" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "Content-Type: application/json" \
-    -H "X-Forwarded-For: 127.0.0.1" \
-    -H "X-Forwarded-Proto: https" \
-    -H "X-Remnawave-Client-Type: browser" \
-    -d "${TOKEN_PAYLOAD}")
-  SUB_API_TOKEN=$(extract_token "$TOKEN_RES" "token")
-  if [ -n "$SUB_API_TOKEN" ] && [ "$SUB_API_TOKEN" != "null" ]; then
-    echo "API-токен для страницы подписок успешно сгенерирован!"
-    sed -i "s|REMNAWAVE_API_TOKEN=.*|REMNAWAVE_API_TOKEN=${SUB_API_TOKEN}|g" "${TARGET_DIR}/subscription/.env" 2>/dev/null || true
-    sed -i "s|REMNAWAVE_API_TOKEN=.*|REMNAWAVE_API_TOKEN=${SUB_API_TOKEN}|g" "${TARGET_DIR}/subscription/docker-compose.yml" 2>/dev/null || true
-  else
-    echo "Внимание: не удалось выпустить токен подписки (TOKEN_RES: ${TOKEN_RES})"
+  if [ "%t" = "true" ]; then
+    TOKEN_PAYLOAD='{"name":"subscription-page","expiresInDays":3650,"scopes":["subscription-page-configs:list","subscription-page-configs:get","subscriptions:subpage-config","system:metadata","users:by-username"]}'
+    TOKEN_RES=$(curl -s --connect-timeout 10 --max-time 30 -X POST "${API_BASE}/api/tokens" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      -H "X-Forwarded-For: 127.0.0.1" \
+      -H "X-Forwarded-Proto: https" \
+      -H "X-Remnawave-Client-Type: browser" \
+      -d "${TOKEN_PAYLOAD}")
+    SUB_API_TOKEN=$(extract_token "$TOKEN_RES" "token")
+    if [ -n "$SUB_API_TOKEN" ] && [ "$SUB_API_TOKEN" != "null" ]; then
+      echo "API-токен для страницы подписок успешно сгенерирован!"
+      sed -i "s|REMNAWAVE_API_TOKEN=.*|REMNAWAVE_API_TOKEN=${SUB_API_TOKEN}|g" "${TARGET_DIR}/subscription/.env" 2>/dev/null || true
+      sed -i "s|REMNAWAVE_API_TOKEN=.*|REMNAWAVE_API_TOKEN=${SUB_API_TOKEN}|g" "${TARGET_DIR}/subscription/docker-compose.yml" 2>/dev/null || true
+    else
+      echo "Внимание: не удалось выпустить токен подписки (TOKEN_RES: ${TOKEN_RES})"
+    fi
   fi
 fi
-
-# Now start / restart the subscription container with the injected valid token
-echo "Запуск контейнера страницы подписок..."
-cd "${TARGET_DIR}/subscription"
-docker compose up -d --force-recreate remnawave-subscription-page 2>/dev/null || docker compose up -d 2>/dev/null || true
-sleep 3
-docker compose logs --tail=10 remnawave-subscription-page || true
-`, targetDir, classicAdminUser, classicAdminPass)
-			_ = runRemoteCmd("Конфигурация токена и запуск страницы подписок", subTokenScript)
+`, targetDir, classicAdminUser, classicAdminPass, hasSub)
+			_ = runRemoteCmd("Регистрация администратора и выпуск токенов API", adminSetupScript)
 		} else {
-			_ = runRemoteCmd("Запуск страницы подписок", fmt.Sprintf("cd %s/subscription && docker compose up -d", targetDir))
+			emitLog("info", "Режим регистрации: самостоятельный в веб-интерфейсе. Создайте первого пользователя при первом входе.")
 		}
+	}
+
+	if hasSub {
+		_ = runRemoteCmd("Запуск страницы подписок", fmt.Sprintf("cd %s/subscription && docker compose up -d", targetDir))
 	}
 	if hasProxy {
 		proxyDir := "nginx"
@@ -1060,6 +1087,12 @@ echo "Decoy HTTP Status: $HTTP_CODE"
 			panelURL = fmt.Sprintf("https://%s/%s", cleanDomain, cleanGate)
 		}
 		emitLog("success", fmt.Sprintf("Панель управления: %s", panelURL))
+		if adminMode != "manual" {
+			emitLog("success", fmt.Sprintf("Логин администратора: %s", classicAdminUser))
+			emitLog("success", fmt.Sprintf("Пароль администратора: %s", classicAdminPass))
+		} else {
+			emitLog("info", "Регистрация: самостоятельная. Завершите регистрацию суперадминистратора в веб-интерфейсе панели.")
+		}
 	}
 	subURL := ""
 	if hasSub && plan.SubscriptionDomain != "" {
@@ -1069,11 +1102,12 @@ echo "Decoy HTTP Status: $HTTP_CODE"
 	emitLog("success", "==================================================")
 
 	return &types.RemoteDeployResult{
-		Success:   true,
-		AdminUser: classicAdminUser,
-		AdminPass: classicAdminPass,
-		PanelURL:  panelURL,
-		SubURL:    subURL,
+		Success:           true,
+		AdminCreationMode: adminMode,
+		AdminUser:         classicAdminUser,
+		AdminPass:         classicAdminPass,
+		PanelURL:          panelURL,
+		SubURL:            subURL,
 	}, nil
 }
 
@@ -1230,8 +1264,25 @@ fi
 	appSecret := generator.RandomHex(16)
 	dbPass := generator.RandomHex(16)
 	metricsPass := generator.RandomHex(16)
+	adminMode := plan.AdminCreationMode
+	if adminMode == "" {
+		adminMode = "auto"
+	}
 	superAdminUser := "admin"
 	superAdminPass := generator.RandomAdminPassword(28)
+	if adminMode == "custom" {
+		superAdminUser = strings.TrimSpace(plan.AdminUsername)
+		if superAdminUser == "" {
+			superAdminUser = "admin"
+		}
+		superAdminPass = strings.TrimSpace(plan.AdminPassword)
+		if len(superAdminPass) < 24 {
+			superAdminPass = generator.RandomAdminPassword(28)
+		}
+	} else if adminMode == "manual" {
+		superAdminUser = ""
+		superAdminPass = ""
+	}
 	tempApiToken := "INIT_AUTOPILOT_TOKEN"
 	tempSecretKey := "PUBLIC KEY FROM REMNAWAVE-PANEL"
 
@@ -1288,6 +1339,7 @@ set -e
 which jq >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1 || true)
 
 API_BASE="http://127.0.0.1:3000"
+ADMIN_MODE="%s"
 SUPERADMIN_USER="%s"
 SUPERADMIN_PASS="%s"
 DECOY_DOMAIN="%s"
@@ -1339,37 +1391,54 @@ done
 IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" | grep -o '"isConfigured":true' || true)
 
 TOKEN=""
-if [ -z "$IS_CONFIGURED" ]; then
-  echo "Регистрация учетной записи администратора..."
-  REG_RES=$(curl -s -X POST "${API_BASE}/api/auth/register" \
-    -H "Content-Type: application/json" \
-    -H "X-Forwarded-For: 127.0.0.1" \
-    -H "X-Forwarded-Proto: https" \
-    -H "X-Remnawave-Client-Type: browser" \
-    -d "{\"username\":\"${SUPERADMIN_USER}\",\"password\":\"${SUPERADMIN_PASS}\"}")
-  TOKEN=$(extract_token "$REG_RES" "accessToken")
-fi
+if [ "${ADMIN_MODE}" = "manual" ]; then
+  echo "Режим регистрации: ручной. Завершите регистрацию суперадминистратора через веб-интерфейс панели."
+else
+  if [ -z "$IS_CONFIGURED" ]; then
+    echo "Регистрация администратора Remnawave в API..."
+    cat > /tmp/rw_reg.json << JSON_REG_EOF
+{"username":"${SUPERADMIN_USER}","password":"${SUPERADMIN_PASS}"}
+JSON_REG_EOF
+    REG_RES=$(curl -s -X POST "${API_BASE}/api/auth/register" \
+      -H "Content-Type: application/json" \
+      -H "X-Forwarded-For: 127.0.0.1" \
+      -H "X-Forwarded-Proto: https" \
+      -H "X-Remnawave-Client-Type: browser" \
+      --data-binary @/tmp/rw_reg.json)
+    rm -f /tmp/rw_reg.json
+    echo "Ответ API: ${REG_RES}"
+    TOKEN=$(extract_token "$REG_RES" "accessToken")
+    if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
+      echo "Суперадминистратор успешно зарегистрирован в базе данных!"
+    fi
+  fi
 
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-  echo "Авторизация существующего администратора..."
-  LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -H "X-Forwarded-For: 127.0.0.1" \
-    -H "X-Forwarded-Proto: https" \
-    -H "X-Remnawave-Client-Type: browser" \
-    -d "{\"username\":\"${SUPERADMIN_USER}\",\"password\":\"${SUPERADMIN_PASS}\"}")
-  TOKEN=$(extract_token "$LOGIN_RES" "accessToken")
-fi
+  if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+    echo "Авторизация существующего администратора..."
+    cat > /tmp/rw_login.json << JSON_LOGIN_EOF
+{"username":"${SUPERADMIN_USER}","password":"${SUPERADMIN_PASS}"}
+JSON_LOGIN_EOF
+    LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
+      -H "Content-Type: application/json" \
+      -H "X-Forwarded-For: 127.0.0.1" \
+      -H "X-Forwarded-Proto: https" \
+      -H "X-Remnawave-Client-Type: browser" \
+      --data-binary @/tmp/rw_login.json)
+    rm -f /tmp/rw_login.json
+    echo "Ответ API авторизации: ${LOGIN_RES}"
+    TOKEN=$(extract_token "$LOGIN_RES" "accessToken")
+  fi
 
-# Save credentials to credentials.txt and .env
-mkdir -p "${TARGET_DIR}" 2>/dev/null || true
-echo "ADMIN_USERNAME=${SUPERADMIN_USER}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
-echo "ADMIN_PASSWORD=${SUPERADMIN_PASS}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
-cat > "${TARGET_DIR}/credentials.txt" <<CRED_EOF
+  # Save credentials to credentials.txt and .env
+  mkdir -p "${TARGET_DIR}" 2>/dev/null || true
+  echo "ADMIN_USERNAME=${SUPERADMIN_USER}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
+  echo "ADMIN_PASSWORD=${SUPERADMIN_PASS}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
+  cat > "${TARGET_DIR}/credentials.txt" <<CRED_EOF
 ADMIN_USERNAME=${SUPERADMIN_USER}
 ADMIN_PASSWORD=${SUPERADMIN_PASS}
 CRED_EOF
-chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
+  chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
+fi
 
 # Mint & save master token for maintenance
 if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
@@ -1515,6 +1584,7 @@ echo "Перезапуск сервисов с финальными ключам
 cd "${TARGET_DIR}" && docker compose down >/dev/null 2>&1 && docker compose up -d >/dev/null 2>&1 || true
 echo "Стек успешно запущен в режиме единого порта 443!"
 `,
+		adminMode,
 		superAdminUser,
 		superAdminPass,
 		decoyDomain,
@@ -1557,8 +1627,12 @@ fi
 	emitLog("success", "==================================================")
 	emitLog("success", "ВСЕ КОМПОНЕНТЫ УСПЕШНО РАЗВЁРНУТЫ В РЕЖИМЕ СТЕЛС-443!")
 	emitLog("success", fmt.Sprintf("Панель управления: %s", panelURL))
-	emitLog("success", fmt.Sprintf("Логин администратора: %s", superAdminUser))
-	emitLog("success", fmt.Sprintf("Пароль администратора: %s", superAdminPass))
+	if adminMode != "manual" {
+		emitLog("success", fmt.Sprintf("Логин администратора: %s", superAdminUser))
+		emitLog("success", fmt.Sprintf("Пароль администратора: %s", superAdminPass))
+	} else {
+		emitLog("info", "Регистрация: самостоятельная. Завершите регистрацию суперадминистратора в открывшейся панели.")
+	}
 	if subURL != "" {
 		emitLog("success", fmt.Sprintf("Страница подписок: %s", subURL))
 	}
@@ -1566,10 +1640,11 @@ fi
 	emitLog("success", "==================================================")
 
 	return &types.RemoteDeployResult{
-		Success:   true,
-		AdminUser: superAdminUser,
-		AdminPass: superAdminPass,
-		PanelURL:  panelURL,
-		SubURL:    subURL,
+		Success:           true,
+		AdminCreationMode: adminMode,
+		AdminUser:         superAdminUser,
+		AdminPass:         superAdminPass,
+		PanelURL:          panelURL,
+		SubURL:            subURL,
 	}, nil
 }
