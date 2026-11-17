@@ -194,3 +194,75 @@ func TestQueryGeoIP_MockRoundTripper(t *testing.T) {
 		t.Errorf("Unexpected location: %s", loc)
 	}
 }
+
+func TestProbeTTLCache(t *testing.T) {
+	ResetProbeCache()
+
+	host := "192.0.2.1"
+	port := 443
+
+	// 1. Initial lookup -> must be miss
+	_, found := getCachedProbe(host, port)
+	if found {
+		t.Fatalf("Expected cache miss for fresh host")
+	}
+
+	// 2. Put result into cache
+	sample := types.IPBlockCheckResult{
+		Host:      host,
+		Port:      port,
+		Status:    "clean",
+		Summary:   "Cached clean test result",
+		CheckedAt: "17.11.2026 15:30:00",
+	}
+	setCachedProbe(host, port, sample)
+
+	// 3. Lookup -> must be hit
+	cached, found := getCachedProbe(host, port)
+	if !found {
+		t.Fatalf("Expected cache hit after setCachedProbe")
+	}
+	if cached.Summary != "Cached clean test result" {
+		t.Errorf("Unexpected cached summary: %s", cached.Summary)
+	}
+
+	// 4. Reset cache -> must be miss
+	ResetProbeCache()
+	_, found = getCachedProbe(host, port)
+	if found {
+		t.Errorf("Expected cache miss after ResetProbeCache")
+	}
+}
+
+func TestDualPortSynthesis_SSHOpen_VPNBlocked(t *testing.T) {
+	// Scenario: SSH (port 22) is clean and reachable from RU.
+	// But Reality/VPN (port 443) is blocked by TSPU (drops/timeouts in Moscow and SPb).
+	localP1 := types.ProbeNodeResult{NodeID: "local_pc", Success: true, LatencyMs: 25, CountryCode: "local"}
+	remoteP1 := []types.ProbeNodeResult{
+		{NodeID: "ru1.node.check-host.net", Success: true, LatencyMs: 28, CountryCode: "ru"},
+		{NodeID: "ru2.node.check-host.net", Success: true, LatencyMs: 32, CountryCode: "ru"},
+		{NodeID: "ru3.node.check-host.net", Success: true, LatencyMs: 35, CountryCode: "ru"},
+		{NodeID: "de1.node.check-host.net", Success: true, LatencyMs: 18, CountryCode: "de"},
+	}
+
+	localP2 := types.ProbeNodeResult{NodeID: "local_pc", Success: false, Error: "Таймаут", CountryCode: "local"}
+	remoteP2 := []types.ProbeNodeResult{
+		{NodeID: "ru1.node.check-host.net", Success: false, Error: "Таймаут (ТСПУ / Блокировка)", CountryCode: "ru"},
+		{NodeID: "ru2.node.check-host.net", Success: false, Error: "Таймаут (ТСПУ / Блокировка)", CountryCode: "ru"},
+		{NodeID: "ru3.node.check-host.net", Success: false, Error: "Таймаут (ТСПУ / Блокировка)", CountryCode: "ru"},
+		{NodeID: "de1.node.check-host.net", Success: true, LatencyMs: 19, CountryCode: "de"},
+	}
+
+	allP1 := append([]types.ProbeNodeResult{localP1}, remoteP1...)
+	allP2 := append([]types.ProbeNodeResult{localP2}, remoteP2...)
+
+	resP1 := classifyResults("1.2.3.4", 22, localP1, remoteP1, "Test ISP", "Helsinki", "Russia", false, allP1, "17.11.2026")
+	resP2 := classifyResults("1.2.3.4", 443, localP2, remoteP2, "Test ISP", "Helsinki", "Russia", false, allP2, "17.11.2026")
+
+	if resP1.Status != "clean" {
+		t.Fatalf("Expected SSH port 22 to be clean, got %s", resP1.Status)
+	}
+	if resP2.Status != "blocked" {
+		t.Fatalf("Expected VPN port 443 to be blocked, got %s", resP2.Status)
+	}
+}

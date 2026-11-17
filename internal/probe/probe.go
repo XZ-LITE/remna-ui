@@ -20,7 +20,44 @@ var (
 	}
 	checkHostAPIBase = "https://check-host.net"
 	ipAPIBase        = "http://ip-api.com/json"
+
+	probeCacheMu  sync.RWMutex
+	probeCache    = make(map[string]probeCacheEntry)
+	probeCacheTTL = 75 * time.Second
 )
+
+type probeCacheEntry struct {
+	result    types.IPBlockCheckResult
+	expiresAt time.Time
+}
+
+func getCachedProbe(host string, port int) (types.IPBlockCheckResult, bool) {
+	key := fmt.Sprintf("%s:%d", host, port)
+	probeCacheMu.RLock()
+	defer probeCacheMu.RUnlock()
+	entry, found := probeCache[key]
+	if found && time.Now().Before(entry.expiresAt) {
+		return entry.result, true
+	}
+	return types.IPBlockCheckResult{}, false
+}
+
+func setCachedProbe(host string, port int, res types.IPBlockCheckResult) {
+	key := fmt.Sprintf("%s:%d", host, port)
+	probeCacheMu.Lock()
+	defer probeCacheMu.Unlock()
+	probeCache[key] = probeCacheEntry{
+		result:    res,
+		expiresAt: time.Now().Add(probeCacheTTL),
+	}
+}
+
+// ResetProbeCache clears the in-memory cache (used in testing or forced refreshes)
+func ResetProbeCache() {
+	probeCacheMu.Lock()
+	defer probeCacheMu.Unlock()
+	probeCache = make(map[string]probeCacheEntry)
+}
 
 // CheckIPBlock executes a multi-layered TSPU and RKN connectivity check for a given IP address.
 func CheckIPBlock(host string, port int) types.IPBlockCheckResult {
@@ -39,6 +76,11 @@ func CheckIPBlock(host string, port int) types.IPBlockCheckResult {
 
 	if port <= 0 {
 		port = 22 // Default to SSH management port
+	}
+
+	// In-Memory TTL-Cache check (protects from Check-Host rate-limiting on repeated clicks)
+	if cached, found := getCachedProbe(cleanHost, port); found {
+		return cached
 	}
 
 	now := time.Now().Format("02.01.2006 15:04:05")
@@ -77,19 +119,124 @@ func CheckIPBlock(host string, port int) types.IPBlockCheckResult {
 	// Detect if user PC is exiting through a foreign country (VPN / Proxy / Tunnel)
 	isVPNDetected := clientCC != "" && clientCC != "RU"
 
-	// 2. Perform Local TCP Probe (from this machine, aware of VPN egress)
-	localRes := runLocalProbe(cleanHost, port, isVPNDetected, clientCountry, clientISP)
+	// 2. Perform Dual-Port Distributed & Local Probes (Primary port + Alt Port 443/22)
+	altPort := 443
+	if port == 443 {
+		altPort = 22
+	}
 
-	// 3. Perform Distributed Remote Probes via Check-Host (physically in Moscow, SPb, and Germany)
-	remoteProbes, _ := queryCheckHost(cleanHost, port)
+	var (
+		localP1  types.ProbeNodeResult
+		remoteP1 []types.ProbeNodeResult
+		localP2  types.ProbeNodeResult
+		remoteP2 []types.ProbeNodeResult
+	)
 
-	// Combine probes
-	allProbes := make([]types.ProbeNodeResult, 0, len(remoteProbes)+1)
-	allProbes = append(allProbes, localRes)
-	allProbes = append(allProbes, remoteProbes...)
+	var probeWg sync.WaitGroup
+	probeWg.Add(2)
 
-	// 4. Classify Verdict with VPN-awareness
-	return classifyResults(cleanHost, port, localRes, remoteProbes, ispInfo, locationInfo, clientCountry, isVPNDetected, allProbes, now)
+	go func() {
+		defer probeWg.Done()
+		localP1 = runLocalProbe(cleanHost, port, isVPNDetected, clientCountry, clientISP)
+		remoteP1, _ = queryCheckHost(cleanHost, port)
+	}()
+
+	go func() {
+		defer probeWg.Done()
+		localP2 = runLocalProbe(cleanHost, altPort, isVPNDetected, clientCountry, clientISP)
+		remoteP2, _ = queryCheckHost(cleanHost, altPort)
+	}()
+
+	probeWg.Wait()
+
+	// Combine probes for primary port (for backward compatibility)
+	allP1 := make([]types.ProbeNodeResult, 0, len(remoteP1)+1)
+	allP1 = append(allP1, localP1)
+	allP1 = append(allP1, remoteP1...)
+
+	allP2 := make([]types.ProbeNodeResult, 0, len(remoteP2)+1)
+	allP2 = append(allP2, localP2)
+	allP2 = append(allP2, remoteP2...)
+
+	// 3. Classify individual port verdicts
+	resP1 := classifyResults(cleanHost, port, localP1, remoteP1, ispInfo, locationInfo, clientCountry, isVPNDetected, allP1, now)
+	resP2 := classifyResults(cleanHost, altPort, localP2, remoteP2, ispInfo, locationInfo, clientCountry, isVPNDetected, allP2, now)
+
+	p1Label := fmt.Sprintf("Порт %d (SSH управление)", port)
+	if port == 443 {
+		p1Label = "Порт 443 (VPN / Reality)"
+	}
+	p2Label := fmt.Sprintf("Порт %d (VPN / Reality)", altPort)
+	if altPort == 22 {
+		p2Label = "Порт 22 (SSH управление)"
+	}
+
+	portDetails := []types.PortProbeSummary{
+		{
+			Port:     port,
+			Protocol: p1Label,
+			Status:   resP1.Status,
+			Probes:   allP1,
+		},
+		{
+			Port:     altPort,
+			Protocol: p2Label,
+			Status:   resP2.Status,
+			Probes:   allP2,
+		},
+	}
+
+	// 4. Synthesize unified multi-port verdict
+	overallStatus := resP1.Status
+	overallSummary := resP1.Summary
+	isRKNBlocked := resP1.IsRKNBlocked || resP2.IsRKNBlocked
+
+	if resP1.Status == "clean" && resP2.Status == "clean" {
+		overallStatus = "clean"
+		isRKNBlocked = false
+		overallSummary = "Все ключевые порты доступны из РФ (SSH 22 и VPN 443 подтверждены, фильтрация ТСПУ отсутствует)."
+		if isVPNDetected && clientCountry != "" {
+			overallSummary += fmt.Sprintf(" Ваше локальное соединение через VPN (%s) также подтверждает доступность хоста.", clientCountry)
+		}
+	} else if (resP1.Status == "clean" || resP1.Status == "partial") && resP2.Status == "blocked" {
+		overallStatus = "blocked"
+		isRKNBlocked = true
+		overallSummary = fmt.Sprintf("Высокий риск блокировки ТСПУ: порт SSH (%d) доступен, однако рабочий VPN-порт (%d) полностью заблокирован на магистральных операторах РФ! Клиенты не смогут подключиться к ноде без смены IP.", port, altPort)
+	} else if resP1.Status == "blocked" && (resP2.Status == "clean" || resP2.Status == "partial") {
+		overallStatus = "partial"
+		isRKNBlocked = true
+		overallSummary = fmt.Sprintf("Селективная блокировка ТСПУ: рабочий порт VPN (%d) доступен в РФ, но порт управления SSH (%d) сбрасывается ТСПУ.", altPort, port)
+	} else if resP1.Status == "blocked" && resP2.Status == "blocked" {
+		overallStatus = "blocked"
+		isRKNBlocked = true
+		overallSummary = fmt.Sprintf("Полная блокировка IP-адреса в РФ (ТСПУ / РКН): ни порт управления (%d), ни порт VPN (%d) не отвечают из России. Рекомендуется запросить замену IP у хостинга.", port, altPort)
+	} else if resP1.Status == "offline" && resP2.Status == "clean" {
+		overallStatus = "clean"
+		isRKNBlocked = false
+		overallSummary = fmt.Sprintf("Рабочий порт VPN (%d) чист и доступен в РФ. Порт SSH (%d) закрыт сетевым экраном хостинга.", altPort, port)
+	} else if resP1.Status == "offline" && resP2.Status == "offline" {
+		overallStatus = "offline"
+		isRKNBlocked = false
+		overallSummary = fmt.Sprintf("Сервер не отвечает ни на порту %d, ни на порту %d (ни из РФ, ни из Европы). Проверьте включен ли VPS и настроен ли файрвол.", port, altPort)
+	}
+
+	finalRes := types.IPBlockCheckResult{
+		Host:          cleanHost,
+		Port:          port,
+		Status:        overallStatus,
+		Summary:       overallSummary,
+		ISPInfo:       ispInfo,
+		LocationInfo:  locationInfo,
+		ClientCountry: clientCountry,
+		IsVPNDetected: isVPNDetected,
+		Probes:        allP1,
+		PortDetails:   portDetails,
+		IsRKNBlocked:  isRKNBlocked,
+		CheckedAt:     now,
+	}
+
+	setCachedProbe(cleanHost, port, finalRes)
+	return finalRes
 }
 
 func runLocalProbe(host string, port int, isVPNDetected bool, clientCountry, clientISP string) types.ProbeNodeResult {
@@ -259,26 +406,55 @@ func queryCheckHost(host string, port int) ([]types.ProbeNodeResult, error) {
 		return nil, fmt.Errorf("check-host invalid init: %v", err)
 	}
 
-	// Poll results (wait 2 seconds)
-	time.Sleep(2200 * time.Millisecond)
-
-	resultURL := fmt.Sprintf("%s/check-result/%s", checkHostAPIBase, initResp.RequestID)
-	req2, err := http.NewRequestWithContext(context.Background(), "GET", resultURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req2.Header.Set("Accept", "application/json")
-	req2.Header.Set("User-Agent", "RemnaUI-Probe/2.0")
-
-	resp2, err := httpClient.Do(req2)
-	if err != nil {
-		return nil, err
-	}
-	defer resp2.Body.Close()
-
+	// Adaptive polling loop: up to 4 iterations (initial 1200ms, then 800ms)
+	// As soon as all requested nodes have finished their checks, exit immediately!
 	var rawResults map[string]json.RawMessage
-	if err := json.NewDecoder(resp2.Body).Decode(&rawResults); err != nil {
-		return nil, err
+	resultURL := fmt.Sprintf("%s/check-result/%s", checkHostAPIBase, initResp.RequestID)
+
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt == 0 {
+			time.Sleep(1200 * time.Millisecond)
+		} else {
+			time.Sleep(800 * time.Millisecond)
+		}
+
+		req2, err := http.NewRequestWithContext(context.Background(), "GET", resultURL, nil)
+		if err != nil {
+			continue
+		}
+		req2.Header.Set("Accept", "application/json")
+		req2.Header.Set("User-Agent", "RemnaUI-Probe/2.0")
+
+		resp2, err := httpClient.Do(req2)
+		if err != nil {
+			continue
+		}
+
+		var current map[string]json.RawMessage
+		decErr := json.NewDecoder(resp2.Body).Decode(&current)
+		resp2.Body.Close()
+		if decErr != nil {
+			continue
+		}
+
+		rawResults = current
+
+		// Check if all requested nodes have finished
+		allDone := true
+		for _, nodeID := range nodes {
+			raw, found := rawResults[nodeID]
+			if !found || string(raw) == "null" || len(raw) == 0 {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			break
+		}
+	}
+
+	if rawResults == nil {
+		return nil, fmt.Errorf("check-host result polling timed out")
 	}
 
 	var results []types.ProbeNodeResult

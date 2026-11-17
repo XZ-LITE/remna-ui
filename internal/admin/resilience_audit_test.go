@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,5 +117,48 @@ func TestResilience_InvalidInputFailsFast(t *testing.T) {
 	resDownload := DownloadBackupStream(dummyServer, "bad_backup.zip", "local.zip")
 	if resDownload.Success || resDownload.Error == "" {
 		t.Errorf("DownloadBackupStream should fail fast on non .tar.gz name")
+	}
+}
+
+func TestCircuitBreaker_StateTransitions(t *testing.T) {
+	serverID := "cb-test-server-1"
+	ResetServerCircuitBreaker(serverID)
+
+	// 1. Initial state -> allowed
+	allowed, _ := CheckCircuitBreaker(serverID)
+	if !allowed {
+		t.Fatalf("Expected fresh server to be allowed by circuit breaker")
+	}
+
+	// 2. 1st failure -> still allowed (threshold is 2)
+	RecordServerInspectionResult(serverID, false)
+	allowed, _ = CheckCircuitBreaker(serverID)
+	if !allowed {
+		t.Fatalf("Expected 1 failure to remain under threshold")
+	}
+
+	// 3. 2nd failure -> tripped into cooldown!
+	RecordServerInspectionResult(serverID, false)
+	allowed, reason := CheckCircuitBreaker(serverID)
+	if allowed {
+		t.Fatalf("Expected circuit breaker to trip after 2 failures")
+	}
+	if !strings.Contains(reason, "Circuit Breaker") {
+		t.Errorf("Expected reason to mention Circuit Breaker, got: %s", reason)
+	}
+
+	// 4. Reset -> immediately allowed again
+	ResetServerCircuitBreaker(serverID)
+	allowed, _ = CheckCircuitBreaker(serverID)
+	if !allowed {
+		t.Fatalf("Expected server to be allowed immediately after reset")
+	}
+
+	// 5. Success resets failure counter
+	RecordServerInspectionResult(serverID, false)
+	RecordServerInspectionResult(serverID, true)
+	allowed, _ = CheckCircuitBreaker(serverID)
+	if !allowed {
+		t.Fatalf("Expected success to clear failure counter")
 	}
 }

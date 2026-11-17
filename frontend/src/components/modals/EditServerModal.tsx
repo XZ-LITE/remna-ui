@@ -605,7 +605,34 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
                       {ipCheckResult.summary}
                     </p>
 
-                    {ipCheckResult.probes && ipCheckResult.probes.length > 0 && (
+                    {ipCheckResult.port_details && ipCheckResult.port_details.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+                        {ipCheckResult.port_details.map((pd: any, pdIdx: number) => (
+                          <div key={pdIdx} className="ip-port-detail-box">
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                              <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+                                {pd.protocol}
+                              </span>
+                              <span className={`ip-check-badge ${pd.status}`} style={{ fontSize: "10.5px", padding: "1px 6px" }}>
+                                {pd.status === "clean" ? "Доступен" : pd.status === "blocked" ? "Блокировка ТСПУ" : pd.status === "partial" ? "Частично" : "Офлайн"}
+                              </span>
+                            </div>
+                            <div className="ip-probe-pills-row">
+                              {pd.probes.map((pr: any, pIdx: number) => {
+                                const isRef = pr.country_code === "de";
+                                const pillClass = isRef ? "ref" : pr.success ? "ok" : "fail";
+                                return (
+                                  <span key={pIdx} className={`ip-probe-pill ${pillClass}`} title={pr.error || `Задержка: ${pr.latency_ms} ms`}>
+                                    {pr.success ? <Check size={10} /> : <X size={10} />}
+                                    <span>{pr.location}: {pr.success ? `${pr.latency_ms} ms` : (pr.error || "Сбой")}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : ipCheckResult.probes && ipCheckResult.probes.length > 0 ? (
                       <div className="ip-probe-pills-row">
                         {ipCheckResult.probes.map((pr: any, pIdx: number) => {
                           const isRef = pr.country_code === "de";
@@ -618,7 +645,7 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
                           );
                         })}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>

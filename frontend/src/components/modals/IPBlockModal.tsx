@@ -26,6 +26,13 @@ interface IPProbeItem {
   error?: string;
 }
 
+interface PortDetailItem {
+  port: number;
+  protocol: string;
+  status: string;
+  probes: IPProbeItem[];
+}
+
 interface IPBlockData {
   host: string;
   port: number;
@@ -36,6 +43,7 @@ interface IPBlockData {
   client_country?: string;
   is_vpn_detected?: boolean;
   probes?: IPProbeItem[];
+  port_details?: PortDetailItem[];
   is_rkn_blocked?: boolean;
   checked_at?: string;
 }
@@ -65,11 +73,21 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
       `Вердикт: ${result.status.toUpperCase()} (${result.summary})`,
       result.isp_info ? `Провайдер/ASN: ${result.isp_info}` : "",
       result.location_info ? `Локация: ${result.location_info}` : "",
+      result.is_vpn_detected && result.client_country ? `ПК шлюз: VPN (${result.client_country})` : "",
       `Время проверки: ${result.checked_at}`,
-      `Узлы мониторинга:`,
-      ...(result.probes || []).map(
-        (p: IPProbeItem) => `  - ${p.location} (${p.city || p.country_code}): ${p.success ? `OK (${p.latency_ms} ms)` : `СБОЙ (${p.error || "нет ответа"})`}`
-      ),
+      ...(result.port_details && result.port_details.length > 0
+        ? result.port_details.flatMap((pd) => [
+            `\n[${pd.protocol} - Статус: ${pd.status.toUpperCase()}]:`,
+            ...pd.probes.map(
+              (p: IPProbeItem) => `  - ${p.location} (${p.city || p.country_code}): ${p.success ? `OK (${p.latency_ms} ms)` : `СБОЙ (${p.error || "нет ответа"})`}`
+            ),
+          ])
+        : [
+            `\nУзлы мониторинга:`,
+            ...(result.probes || []).map(
+              (p: IPProbeItem) => `  - ${p.location} (${p.city || p.country_code}): ${p.success ? `OK (${p.latency_ms} ms)` : `СБОЙ (${p.error || "нет ответа"})`}`
+            ),
+          ]),
     ].filter(Boolean);
 
     navigator.clipboard.writeText(lines.join("\n"));
@@ -207,8 +225,41 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
 
                 <p className="ip-check-summary">{result.summary}</p>
 
-                {/* Probe Pills */}
-                {result.probes && result.probes.length > 0 && (
+                {/* Multi-Port Probe Breakdown or Single Probes Fallback */}
+                {result.port_details && result.port_details.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
+                    {result.port_details.map((pd, pdIdx) => (
+                      <div key={pdIdx} className="ip-port-detail-box">
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+                            {pd.protocol}
+                          </span>
+                          <span className={`ip-check-badge ${pd.status}`} style={{ fontSize: "11px", padding: "2px 7px" }}>
+                            {pd.status === "clean" ? "Доступен" : pd.status === "blocked" ? "Блокировка ТСПУ" : pd.status === "partial" ? "Частично" : "Офлайн"}
+                          </span>
+                        </div>
+                        <div className="ip-probe-pills-row">
+                          {pd.probes.map((pr: IPProbeItem, pIdx: number) => {
+                            const isRef = pr.country_code === "de";
+                            const pillClass = isRef ? "ref" : pr.success ? "ok" : "fail";
+                            return (
+                              <span
+                                key={pIdx}
+                                className={`ip-probe-pill ${pillClass}`}
+                                title={pr.error || `Задержка: ${pr.latency_ms} ms (${pr.location})`}
+                              >
+                                {pr.success ? <Check size={10} /> : <X size={10} />}
+                                <span>
+                                  {pr.location}: {pr.success ? `${pr.latency_ms} ms` : (pr.error || "Сбой")}
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : result.probes && result.probes.length > 0 ? (
                   <div style={{ marginTop: "10px" }}>
                     <div style={{ fontSize: "11px", color: "var(--win-text-secondary)", marginBottom: "6px", fontWeight: 500 }}>
                       Результаты распределенных пробников:
@@ -232,7 +283,7 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
                       })}
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
 
               {/* Explanatory Recommendations */}

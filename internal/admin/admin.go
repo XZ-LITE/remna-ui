@@ -586,34 +586,92 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	return session, release, nil
 }
 
+type circuitState struct {
+	consecutiveFailures int
+	cooldownUntil       time.Time
+}
 
+var (
+	cbMu               sync.RWMutex
+	cbStates           = make(map[string]*circuitState)
+	cbThreshold        = 2
+	cbCooldownDuration = 5 * time.Minute
+)
+
+// CheckCircuitBreaker returns false and a cooldown explanation if the server has repeatedly failed.
+func CheckCircuitBreaker(serverID string) (bool, string) {
+	if serverID == "" {
+		return true, ""
+	}
+	cbMu.RLock()
+	state, exists := cbStates[serverID]
+	cbMu.RUnlock()
+	if !exists {
+		return true, ""
+	}
+	if state.consecutiveFailures >= cbThreshold && time.Now().Before(state.cooldownUntil) {
+		remaining := int(time.Until(state.cooldownUntil).Minutes()) + 1
+		return false, fmt.Sprintf("Офлайн-пауза (Circuit Breaker: сервер не отвечал %d раз(а), повтор через %d мин)", state.consecutiveFailures, remaining)
+	}
+	return true, ""
+}
+
+// RecordServerInspectionResult updates the circuit breaker state based on inspection outcome.
+func RecordServerInspectionResult(serverID string, success bool) {
+	if serverID == "" {
+		return
+	}
+	cbMu.Lock()
+	defer cbMu.Unlock()
+	state, exists := cbStates[serverID]
+	if !exists {
+		state = &circuitState{}
+		cbStates[serverID] = state
+	}
+	if success {
+		state.consecutiveFailures = 0
+		state.cooldownUntil = time.Time{}
+	} else {
+		state.consecutiveFailures++
+		if state.consecutiveFailures >= cbThreshold {
+			state.cooldownUntil = time.Now().Add(cbCooldownDuration)
+		}
+	}
+}
+
+// ResetServerCircuitBreaker resets the cooldown for a server (e.g. on manual user action).
+func ResetServerCircuitBreaker(serverID string) {
+	if serverID == "" {
+		return
+	}
+	cbMu.Lock()
+	defer cbMu.Unlock()
+	delete(cbStates, serverID)
+}
 
 func GetServerStatus(server types.SavedServer, password string) types.ServerStatusResult {
-
 	if password != "" {
-
 		server.Password = password
-
 	}
 
-
+	// 1. Fast circuit-breaker pre-check
+	if allowed, reason := CheckCircuitBreaker(server.ID); !allowed {
+		return types.ServerStatusResult{
+			Success: false,
+			Error:   reason,
+		}
+	}
 
 	start := time.Now()
 
 	session, release, err := getPooledSession(server)
-
 	if err != nil {
-
+		RecordServerInspectionResult(server.ID, false)
 		return types.ServerStatusResult{
-
 			Success: false,
-
 			Error:   fmt.Sprintf("Не удалось подключиться: %v", err),
-
 		}
-
 	}
-
 	defer release()
 
 
@@ -632,9 +690,8 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 	latency := int(time.Since(start).Milliseconds())
 
 	if err != nil {
-
+		RecordServerInspectionResult(server.ID, false)
 		return types.ServerStatusResult{Success: false, Error: err.Error()}
-
 	}
 
 
@@ -843,6 +900,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 		performanceOptimized = strings.TrimSpace(parts[11]) == "yes"
 	}
 
+	RecordServerInspectionResult(server.ID, true)
 	return types.ServerStatusResult{
 		Success:              true,
 		HostInfo:             hostInfo,

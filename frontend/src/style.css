@@ -5003,6 +5003,16 @@ textarea.win-input {
   flex-wrap: wrap;
 }
 
+.ip-port-detail-box {
+  padding: 10px 12px;
+  border-radius: var(--win-radius-sm, 6px);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--win-card-stroke);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 :root[data-theme="light"] .ip-check-card {
   background: #ffffff;
   border-color: rgba(0, 0, 0, 0.12);

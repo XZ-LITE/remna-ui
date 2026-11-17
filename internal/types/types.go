@@ -231,17 +231,25 @@ type ProbeNodeResult struct {
 	Error       string `json:"error,omitempty"`
 }
 
+type PortProbeSummary struct {
+	Port     int               `json:"port"`
+	Protocol string            `json:"protocol"` // "SSH (управление)" или "VPN / Reality (трафик)"
+	Status   string            `json:"status"`   // "clean" | "blocked" | "partial" | "offline"
+	Probes   []ProbeNodeResult `json:"probes"`
+}
+
 type IPBlockCheckResult struct {
-	Host          string            `json:"host"`
-	Port          int               `json:"port"`
-	Status        string            `json:"status"` // "clean" | "blocked" | "partial" | "offline"
-	Summary       string            `json:"summary"`
-	ISPInfo       string            `json:"isp_info"`
-	LocationInfo  string            `json:"location_info"`
-	ClientCountry string            `json:"client_country,omitempty"`
-	IsVPNDetected bool              `json:"is_vpn_detected"`
-	Probes        []ProbeNodeResult `json:"probes"`
-	IsRKNBlocked  bool              `json:"is_rkn_blocked"`
-	CheckedAt     string            `json:"checked_at"`
+	Host          string              `json:"host"`
+	Port          int                 `json:"port"`
+	Status        string              `json:"status"` // "clean" | "blocked" | "partial" | "offline"
+	Summary       string              `json:"summary"`
+	ISPInfo       string              `json:"isp_info"`
+	LocationInfo  string              `json:"location_info"`
+	ClientCountry string              `json:"client_country,omitempty"`
+	IsVPNDetected bool                `json:"is_vpn_detected"`
+	Probes        []ProbeNodeResult   `json:"probes"`
+	PortDetails   []PortProbeSummary  `json:"port_details,omitempty"`
+	IsRKNBlocked  bool                `json:"is_rkn_blocked"`
+	CheckedAt     string              `json:"checked_at"`
 }
 

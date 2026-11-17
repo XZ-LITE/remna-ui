@@ -542,6 +542,7 @@ export class IPBlockCheckResult {
     "client_country"?: string;
     "is_vpn_detected": boolean;
     "probes": ProbeNodeResult[];
+    "port_details"?: PortProbeSummary[];
     "is_rkn_blocked": boolean;
     "checked_at": string;
 
@@ -586,9 +587,13 @@ export class IPBlockCheckResult {
      */
     static createFrom($$source: any = {}): IPBlockCheckResult {
         const $$createField8_0 = $$createType2;
+        const $$createField9_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("probes" in $$parsedSource) {
             $$parsedSource["probes"] = $$createField8_0($$parsedSource["probes"]);
+        }
+        if ("port_details" in $$parsedSource) {
+            $$parsedSource["port_details"] = $$createField9_0($$parsedSource["port_details"]);
         }
         return new IPBlockCheckResult($$parsedSource as Partial<IPBlockCheckResult>);
     }
@@ -812,6 +817,51 @@ export class PanelSquadItem {
             $$parsedSource["inbound_uuids"] = $$createField3_0($$parsedSource["inbound_uuids"]);
         }
         return new PanelSquadItem($$parsedSource as Partial<PanelSquadItem>);
+    }
+}
+
+export class PortProbeSummary {
+    "port": number;
+
+    /**
+     * "SSH (управление)" или "VPN / Reality (трафик)"
+     */
+    "protocol": string;
+
+    /**
+     * "clean" | "blocked" | "partial" | "offline"
+     */
+    "status": string;
+    "probes": ProbeNodeResult[];
+
+    /** Creates a new PortProbeSummary instance. */
+    constructor($$source: Partial<PortProbeSummary> = {}) {
+        if (!("port" in $$source)) {
+            this["port"] = 0;
+        }
+        if (!("protocol" in $$source)) {
+            this["protocol"] = "";
+        }
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+        if (!("probes" in $$source)) {
+            this["probes"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PortProbeSummary instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PortProbeSummary {
+        const $$createField3_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("probes" in $$parsedSource) {
+            $$parsedSource["probes"] = $$createField3_0($$parsedSource["probes"]);
+        }
+        return new PortProbeSummary($$parsedSource as Partial<PortProbeSummary>);
     }
 }
 
@@ -1116,9 +1166,9 @@ export class ServerStatusResult {
      * Creates a new ServerStatusResult instance from a string or object.
      */
     static createFrom($$source: any = {}): ServerStatusResult {
-        const $$createField2_0 = $$createType3;
-        const $$createField3_0 = $$createType5;
-        const $$createField11_0 = $$createType7;
+        const $$createField2_0 = $$createType5;
+        const $$createField3_0 = $$createType7;
+        const $$createField11_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("metrics" in $$parsedSource) {
             $$parsedSource["metrics"] = $$createField2_0($$parsedSource["metrics"]);
@@ -1137,8 +1187,10 @@ export class ServerStatusResult {
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = ProbeNodeResult.createFrom;
 const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = ServerMetrics.createFrom;
-const $$createType4 = ContainerInfo.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = BackupInfo.createFrom;
+const $$createType3 = PortProbeSummary.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = ServerMetrics.createFrom;
+const $$createType6 = ContainerInfo.createFrom;
 const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = BackupInfo.createFrom;
+const $$createType9 = $Create.Array($$createType8);

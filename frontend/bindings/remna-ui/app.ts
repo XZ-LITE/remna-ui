@@ -176,6 +176,10 @@ export function RenewSSL(server: types$0.SavedServer): $CancellablePromise<types
     });
 }
 
+export function ResetCircuitBreaker(serverID: string): $CancellablePromise<void> {
+    return $Call.ByID(20713433, serverID);
+}
+
 export function ResetSuperadmin(server: types$0.SavedServer): $CancellablePromise<types$0.CommandResult> {
     return $Call.ByID(509327154, server).then(($result: any) => {
         return $$createType0($result);

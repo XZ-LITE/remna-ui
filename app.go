@@ -98,6 +98,10 @@ func (a *App) GetServerStatus(server types.SavedServer, password string) types.S
 	return admin.GetServerStatus(server, password)
 }
 
+func (a *App) ResetCircuitBreaker(serverID string) {
+	admin.ResetServerCircuitBreaker(serverID)
+}
+
 func (a *App) GetContainerLogs(server types.SavedServer, container string) string {
 	return admin.GetContainerLogs(server, container)
 }

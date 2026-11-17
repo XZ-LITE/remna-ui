@@ -174,6 +174,7 @@ const {
   AutoFixSubscriptionToken,
   UninstallStack,
   CheckAppUpdate,
+  ResetCircuitBreaker,
 } = AppBindings;
 
 const EventsOn = (eventName: string, callback: (...args: any[]) => void) => {
@@ -1703,7 +1704,10 @@ export function App() {
     let isSuccess = false;
 
     try {
-
+      if (!silentToast) {
+        // Manual user trigger explicitly resets Circuit Breaker cooldown
+        await ResetCircuitBreaker(srv.id);
+      }
       const res = await GetServerStatus(srv, (srv as any).password || sshPass);
 
       setServerStatus((prev) => ({ ...prev, [srv.id]: res }));
@@ -1758,58 +1762,40 @@ export function App() {
 
   };
 
-  // Resilient batched inspection of all saved servers with concurrency limit
+  // Resilient sliding-window worker pool inspection of all saved servers (limit 4 concurrent SSH streams)
   const handleInspectAllServers = useCallback(async () => {
-
     if (savedServers.length === 0) return;
 
     const concurrency = 4;
-
     let onlineCount = 0;
-
     let offlineCount = 0;
+    let currentIndex = 0;
 
-    for (let i = 0; i < savedServers.length; i += concurrency) {
-
-      const chunk = savedServers.slice(i, i + concurrency);
-
-      const results = await Promise.allSettled(
-
-        chunk.map((s) => handleInspectServer(s, true))
-
-      );
-
-      for (const res of results) {
-
-        if (res.status === "fulfilled" && res.value === true) {
-
-          onlineCount++;
-
-        } else {
-
+    const numWorkers = Math.min(concurrency, savedServers.length);
+    const workers = Array.from({ length: numWorkers }, async () => {
+      while (currentIndex < savedServers.length) {
+        const idx = currentIndex++;
+        const srv = savedServers[idx];
+        try {
+          const ok = await handleInspectServer(srv, true);
+          if (ok) onlineCount++;
+          else offlineCount++;
+        } catch {
           offlineCount++;
-
         }
-
       }
+    });
 
-    }
+    await Promise.all(workers);
 
     if (offlineCount === 0) {
-
       addToast("success", `Опрос завершен: все серверы (${onlineCount}) в сети`);
-
     } else if (onlineCount === 0) {
-
       addToast("error", `Опрос завершен: все серверы (${offlineCount}) недоступны`);
-
     } else {
-
       addToast("info", `Опрос завершен: ${onlineCount} в сети, ${offlineCount} недоступно`);
-
     }
-
-  }, [savedServers, sshPass]);
+  }, [savedServers, handleInspectServer, addToast]);
 
 
 
@@ -5580,7 +5566,35 @@ export function App() {
 
                                 <p className="ip-check-summary">{wizardIPResult.summary}</p>
 
-                                {wizardIPResult.probes && wizardIPResult.probes.length > 0 && (
+                                {/* Multi-Port Breakdown or Legacy Probes Row */}
+                                {wizardIPResult.port_details && wizardIPResult.port_details.length > 0 ? (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+                                    {wizardIPResult.port_details.map((pd: any, pdIdx: number) => (
+                                      <div key={pdIdx} className="ip-port-detail-box">
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                                          <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+                                            {pd.protocol}
+                                          </span>
+                                          <span className={`ip-check-badge ${pd.status}`} style={{ fontSize: "10.5px", padding: "1px 6px" }}>
+                                            {pd.status === "clean" ? "Доступен" : pd.status === "blocked" ? "Блокировка ТСПУ" : pd.status === "partial" ? "Частично" : "Офлайн"}
+                                          </span>
+                                        </div>
+                                        <div className="ip-probe-pills-row">
+                                          {pd.probes.map((pr: any, pIdx: number) => {
+                                            const isRef = pr.country_code === "de";
+                                            const pillClass = isRef ? "ref" : pr.success ? "ok" : "fail";
+                                            return (
+                                              <span key={pIdx} className={`ip-probe-pill ${pillClass}`} title={pr.error || `Задержка: ${pr.latency_ms} ms`}>
+                                                {pr.success ? <Check size={10} /> : <X size={10} />}
+                                                <span>{pr.location}: {pr.success ? `${pr.latency_ms} ms` : (pr.error || "Сбой")}</span>
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : wizardIPResult.probes && wizardIPResult.probes.length > 0 ? (
                                   <div className="ip-probe-pills-row">
                                     {wizardIPResult.probes.map((pr: any, pIdx: number) => {
                                       const isRef = pr.country_code === "de";
@@ -5593,7 +5607,7 @@ export function App() {
                                       );
                                     })}
                                   </div>
-                                )}
+                                ) : null}
                               </div>
                             </div>
                           )}

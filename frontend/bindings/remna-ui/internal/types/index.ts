@@ -17,6 +17,7 @@ export {
     PanelNodeItem,
     PanelProfileItem,
     PanelSquadItem,
+    PortProbeSummary,
     ProbeNodeResult,
     SSHTestResult,
     SavedServer,
