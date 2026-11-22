@@ -737,16 +737,23 @@ extract_token() {
   echo "$json_input" | grep -o "\"${field}\":\"[^\"]*\"" | cut -d'"' -f4 || true
 }
 
-echo "Ожидание готовности API Remnawave..."
-for i in $(seq 1 45); do
-  STATUS=$(curl -s --connect-timeout 2 -m 5 "${API_BASE}/api/auth/status" || true)
-  if echo "$STATUS" | grep -q '"isConfigured"'; then
+echo "Ожидание готовности API Remnawave (до 3 минут)..."
+API_READY=0
+for i in $(seq 1 60); do
+  if curl -s -f --connect-timeout 4 --max-time 10 "${API_BASE}/api/auth/status" \
+      -H "X-Forwarded-For: 127.0.0.1" \
+      -H "X-Forwarded-Proto: https" >/dev/null 2>&1; then
+    echo "Remnawave API успешно ответил (попытка $i)!"
+    API_READY=1
     break
   fi
-  sleep 2
+  sleep 3
 done
 
-IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" | grep -o '"isConfigured":true' || true)
+IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" \
+  -H "X-Forwarded-For: 127.0.0.1" \
+  -H "X-Forwarded-Proto: https" 2>/dev/null | grep -oE '"isConfigured":true|"configured":true' || true)
+
 TOKEN=""
 if [ -z "$IS_CONFIGURED" ]; then
   echo "Регистрация администратора Remnawave в API..."
@@ -760,15 +767,11 @@ JSON_REG_EOF
     -H "X-Remnawave-Client-Type: browser" \
     --data-binary @/tmp/rw_reg.json)
   rm -f /tmp/rw_reg.json
-  echo "Ответ API: ${REG_RES}"
   TOKEN=$(extract_token "$REG_RES" "accessToken")
-  if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
-    echo "Суперадминистратор успешно зарегистрирован в базе данных!"
-  fi
 fi
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-  echo "Авторизация администратора Remnawave..."
+  echo "Попытка авторизации администратора Remnawave..."
   cat > /tmp/rw_login.json << JSON_LOGIN_EOF
 {"username":"${ADMIN_USER}","password":"${ADMIN_PASS}"}
 JSON_LOGIN_EOF
@@ -779,15 +782,27 @@ JSON_LOGIN_EOF
     -H "X-Remnawave-Client-Type: browser" \
     --data-binary @/tmp/rw_login.json)
   rm -f /tmp/rw_login.json
-  echo "Ответ API авторизации: ${LOGIN_RES}"
   TOKEN=$(extract_token "$LOGIN_RES" "accessToken")
 fi
 
-# Save admin credentials to credentials.txt and panel/.env
-mkdir -p "${TARGET_DIR}" "${TARGET_DIR}/panel" 2>/dev/null || true
-echo "ADMIN_USERNAME=${ADMIN_USER}" >> "${TARGET_DIR}/panel/.env" 2>/dev/null || true
-echo "ADMIN_PASSWORD=${ADMIN_PASS}" >> "${TARGET_DIR}/panel/.env" 2>/dev/null || true
-cat > "${TARGET_DIR}/credentials.txt" <<CRED_EOF
+if echo "$TOKEN" | grep -q '^ey'; then
+  echo "Суперадминистратор успешно подтвержден в API Remnawave!"
+  mkdir -p "${TARGET_DIR}" "${TARGET_DIR}/panel" 2>/dev/null || true
+  echo "$TOKEN" > "${TARGET_DIR}/token" 2>/dev/null || true
+  echo "$TOKEN" > "${TARGET_DIR}/panel/token" 2>/dev/null || true
+  chmod 600 "${TARGET_DIR}/token" "${TARGET_DIR}/panel/token" 2>/dev/null || true
+  echo "ADMIN_USERNAME=${ADMIN_USER}" >> "${TARGET_DIR}/panel/.env" 2>/dev/null || true
+  echo "ADMIN_PASSWORD=${ADMIN_PASS}" >> "${TARGET_DIR}/panel/.env" 2>/dev/null || true
+  cat > "${TARGET_DIR}/credentials.txt" <<CRED_EOF
+ADMIN_USERNAME=${ADMIN_USER}
+ADMIN_PASSWORD=${ADMIN_PASS}
+CRED_EOF
+  chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
+else
+  echo "ВНИМАНИЕ: Автоматическая регистрация администратора не завершилась через API."
+  echo "Завершите регистрацию учетной записи суперадминистратора вручную через веб-интерфейс панели."
+  rm -f "${TARGET_DIR}/token" "${TARGET_DIR}/panel/token"
+fi
 ADMIN_USERNAME=${ADMIN_USER}
 ADMIN_PASSWORD=${ADMIN_PASS}
 CRED_EOF
@@ -1087,10 +1102,24 @@ echo "Decoy HTTP Status: $HTTP_CODE"
 			panelURL = fmt.Sprintf("https://%s/%s", cleanDomain, cleanGate)
 		}
 		emitLog("success", fmt.Sprintf("Панель управления: %s", panelURL))
-		if adminMode != "manual" {
+
+		// Check if admin token was minted successfully
+		tokenCheckCmd := fmt.Sprintf(`if [ -f "%s/token" ] && grep -q '^ey' "%s/token" 2>/dev/null; then echo "VALID_TOKEN"; elif [ -f "%s/panel/token" ] && grep -q '^ey' "%s/panel/token" 2>/dev/null; then echo "VALID_TOKEN"; else echo "NO_TOKEN"; fi`, targetDir, targetDir, targetDir, targetDir)
+		tokenSess, tokenErr := client.NewSession()
+		var tokenOut []byte
+		if tokenErr == nil {
+			tokenOut, _ = tokenSess.Output(tokenCheckCmd)
+			tokenSess.Close()
+		}
+		isTokenValid := strings.Contains(string(tokenOut), "VALID_TOKEN")
+
+		if isTokenValid && adminMode != "manual" {
 			emitLog("success", fmt.Sprintf("Логин администратора: %s", classicAdminUser))
 			emitLog("success", fmt.Sprintf("Пароль администратора: %s", classicAdminPass))
 		} else {
+			adminMode = "manual"
+			classicAdminUser = ""
+			classicAdminPass = ""
 			emitLog("info", "Регистрация: самостоятельная. Завершите регистрацию суперадминистратора в веб-интерфейсе панели.")
 		}
 	}
@@ -1378,17 +1407,22 @@ if [ -f "${TARGET_DIR}/credentials.txt" ]; then
   fi
 fi
 
-echo "Ожидание готовности API Remnawave..."
-for i in $(seq 1 45); do
-  STATUS=$(curl -s --connect-timeout 2 -m 5 "${API_BASE}/api/auth/status" || true)
-  if echo "$STATUS" | grep -q '"isConfigured"'; then
-    echo "Remnawave API готов к работе!"
+echo "Ожидание готовности API Remnawave (до 3 минут)..."
+API_READY=0
+for i in $(seq 1 60); do
+  if curl -s -f --connect-timeout 4 --max-time 10 "${API_BASE}/api/auth/status" \
+      -H "X-Forwarded-For: 127.0.0.1" \
+      -H "X-Forwarded-Proto: https" >/dev/null 2>&1; then
+    echo "Remnawave API успешно ответил (попытка $i)!"
+    API_READY=1
     break
   fi
-  sleep 2
+  sleep 3
 done
 
-IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" | grep -o '"isConfigured":true' || true)
+IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" \
+  -H "X-Forwarded-For: 127.0.0.1" \
+  -H "X-Forwarded-Proto: https" 2>/dev/null | grep -oE '"isConfigured":true|"configured":true' || true)
 
 TOKEN=""
 if [ "${ADMIN_MODE}" = "manual" ]; then
@@ -1406,15 +1440,11 @@ JSON_REG_EOF
       -H "X-Remnawave-Client-Type: browser" \
       --data-binary @/tmp/rw_reg.json)
     rm -f /tmp/rw_reg.json
-    echo "Ответ API: ${REG_RES}"
     TOKEN=$(extract_token "$REG_RES" "accessToken")
-    if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
-      echo "Суперадминистратор успешно зарегистрирован в базе данных!"
-    fi
   fi
 
   if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-    echo "Авторизация существующего администратора..."
+    echo "Попытка авторизации администратора Remnawave..."
     cat > /tmp/rw_login.json << JSON_LOGIN_EOF
 {"username":"${SUPERADMIN_USER}","password":"${SUPERADMIN_PASS}"}
 JSON_LOGIN_EOF
@@ -1425,19 +1455,26 @@ JSON_LOGIN_EOF
       -H "X-Remnawave-Client-Type: browser" \
       --data-binary @/tmp/rw_login.json)
     rm -f /tmp/rw_login.json
-    echo "Ответ API авторизации: ${LOGIN_RES}"
     TOKEN=$(extract_token "$LOGIN_RES" "accessToken")
   fi
 
-  # Save credentials to credentials.txt and .env
-  mkdir -p "${TARGET_DIR}" 2>/dev/null || true
-  echo "ADMIN_USERNAME=${SUPERADMIN_USER}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
-  echo "ADMIN_PASSWORD=${SUPERADMIN_PASS}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
-  cat > "${TARGET_DIR}/credentials.txt" <<CRED_EOF
+  if echo "$TOKEN" | grep -q '^ey'; then
+    echo "Суперадминистратор успешно подтвержден в API Remnawave!"
+    mkdir -p "${TARGET_DIR}" 2>/dev/null || true
+    echo "$TOKEN" > "${TARGET_DIR}/token" 2>/dev/null || true
+    chmod 600 "${TARGET_DIR}/token" 2>/dev/null || true
+    echo "ADMIN_USERNAME=${SUPERADMIN_USER}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
+    echo "ADMIN_PASSWORD=${SUPERADMIN_PASS}" >> "${TARGET_DIR}/.env" 2>/dev/null || true
+    cat > "${TARGET_DIR}/credentials.txt" <<CRED_EOF
 ADMIN_USERNAME=${SUPERADMIN_USER}
 ADMIN_PASSWORD=${SUPERADMIN_PASS}
 CRED_EOF
-  chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
+    chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
+  else
+    echo "ВНИМАНИЕ: Автоматическая регистрация суперадминистратора не завершилась через API."
+    echo "Завершите регистрацию аккаунта суперадминистратора вручную через веб-интерфейс панели."
+    rm -f "${TARGET_DIR}/token"
+  fi
 fi
 
 # Mint & save master token for maintenance
@@ -1627,11 +1664,24 @@ fi
 	emitLog("success", "==================================================")
 	emitLog("success", "ВСЕ КОМПОНЕНТЫ УСПЕШНО РАЗВЁРНУТЫ В РЕЖИМЕ СТЕЛС-443!")
 	emitLog("success", fmt.Sprintf("Панель управления: %s", panelURL))
-	if adminMode != "manual" {
+	// Check if admin token was minted successfully
+	tokenCheckCmd := fmt.Sprintf(`if [ -f "%s/token" ] && grep -q '^ey' "%s/token" 2>/dev/null; then echo "VALID_TOKEN"; else echo "NO_TOKEN"; fi`, targetDir, targetDir)
+	tokenSess, tokenErr := client.NewSession()
+	var tokenOut []byte
+	if tokenErr == nil {
+		tokenOut, _ = tokenSess.Output(tokenCheckCmd)
+		tokenSess.Close()
+	}
+	isTokenValid := strings.Contains(string(tokenOut), "VALID_TOKEN")
+
+	if isTokenValid && adminMode != "manual" {
 		emitLog("success", fmt.Sprintf("Логин администратора: %s", superAdminUser))
 		emitLog("success", fmt.Sprintf("Пароль администратора: %s", superAdminPass))
 	} else {
-		emitLog("info", "Регистрация: самостоятельная. Завершите регистрацию суперадминистратора в открывшейся панели.")
+		adminMode = "manual"
+		superAdminUser = ""
+		superAdminPass = ""
+		emitLog("info", "Регистрация: самостоятельная. Завершите регистрацию суперадминистратора в открывшейся веб-панели.")
 	}
 	if subURL != "" {
 		emitLog("success", fmt.Sprintf("Страница подписок: %s", subURL))

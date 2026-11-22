@@ -5950,8 +5950,46 @@ export function App() {
 
 
 
-                    {/* Launch Button */}
+                    {/* Deployment Parameters Summary Card */}
+                    <div className="settings-group">
+                      <div className="settings-group-title">Сводка параметров перед запуском</div>
+                      <div className="settings-card-group" style={{ padding: "14px 16px", background: "var(--win-fill-card-secondary)", border: "1px solid var(--win-stroke-card)", borderRadius: "8px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", fontSize: "12.5px" }}>
+                          <div>
+                            <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Режим топологии:</span>
+                            <strong style={{ color: "var(--win-text-primary)" }}>
+                              {portMode === "stealth443" ? "eGames Stealth 443 (Single Port)" : "Классический режим портов"}
+                            </strong>
+                          </div>
+                          {preset !== "node-only" && components.includes("panel") && (
+                            <div>
+                              <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Суперадминистратор панели:</span>
+                              <strong style={{ color: "var(--win-accent)" }}>
+                                {adminCreationMode === "auto"
+                                  ? "Автоматически (генерация пароля 28 симв.)"
+                                  : adminCreationMode === "custom"
+                                  ? `Свой аккаунт (логин: ${adminUsername.trim() || "admin"})`
+                                  : "В браузере вручную при первом входе"}
+                              </strong>
+                            </div>
+                          )}
+                          {panelDomain && (
+                            <div>
+                              <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Домен панели:</span>
+                              <strong style={{ color: "var(--win-text-primary)" }}>{panelDomain}</strong>
+                            </div>
+                          )}
+                          {components.includes("subscription") && subDomain && (
+                            <div>
+                              <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Домен подписок:</span>
+                              <strong style={{ color: "var(--win-text-primary)" }}>{subDomain}</strong>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
+                    {/* Launch Button */}
                     <div style={{ marginTop: "16px", marginBottom: "8px", display: "flex", justifyContent: "flex-end" }}>
 
                       <button
@@ -6206,10 +6244,10 @@ export function App() {
                           >
                             <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--win-accent)", display: "flex", alignItems: "center", gap: "6px" }}>
                               <User size={14} />
-                              <span>Регистрация суперадминистратора</span>
+                              <span>Регистрация суперадминистратора в веб-панели</span>
                             </div>
                             <div style={{ fontSize: "12px", color: "var(--win-text-secondary)", lineHeight: "1.5" }}>
-                              Вы выбрали самостоятельную регистрацию. Перейдите в веб-интерфейс по ссылке выше и завершите создание учетной записи администратора в окне первоначальной настройки Remnawave.
+                              Требуется завершить регистрацию: нажмите кнопку «Открыть панель управления в браузере» ниже и укажите логин и надежный пароль в открывшейся форме первоначальной настройки Remnawave.
                             </div>
                             {deployedSubUrl && (
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", fontSize: "12px", borderTop: "1px solid var(--win-card-row-border)", paddingTop: "8px" }}>
@@ -7793,19 +7831,19 @@ export function App() {
                                   <div className="tool-card" style={{ padding: "12px 14px" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
                                       <Trash2 size={15} style={{ color: "#f87171" }} />
-                                      <span style={{ fontWeight: 600, fontSize: "13px" }}>Очистка кэша Docker</span>
+                                      <span style={{ fontWeight: 600, fontSize: "13px" }}>Безопасная очистка диска</span>
                                     </div>
                                     <p style={{ fontSize: "12px", color: "var(--win-text-secondary)", margin: "0 0 10px 0", lineHeight: 1.4 }}>
-                                      Удаляет старые слои образов, кэш сборщика и сжимает системные журналы systemd journald.
+                                      Удаляет неиспользуемые слои Docker, кэши buildx и сжимает системные журналы journalctl без удаления данных БД.
                                     </p>
                                     <button
                                       className="win-button"
                                       style={{ width: "100%", justifyContent: "center", height: "28px", fontSize: "12px" }}
-                                      disabled={actionLoading[`prune-${srv.id}`]}
-                                      onClick={() => handlePruneDocker(srv)}
+                                      disabled={cleaningDiskServerId === srv.id}
+                                      onClick={() => handleCleanServerDisk(srv)}
                                     >
-                                      {actionLoading[`prune-${srv.id}`] ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                      <span>Очистить кэш диска</span>
+                                      {cleaningDiskServerId === srv.id ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                      <span>Очистить диск сервера</span>
                                     </button>
                                   </div>
 

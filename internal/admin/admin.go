@@ -1143,49 +1143,44 @@ func FixDatabaseSync(server types.SavedServer) types.CommandResult {
 
 
 	cmd := `
-
-DB_PASS=$(grep -E '^POSTGRES_PASSWORD=' /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n')
-
-if [ -z "$DB_PASS" ]; then
-
-  echo "Файл /opt/remnawave/panel/.env не найден"
-
-  exit 1
-
+COMPOSE_DIR="/opt/remnawave"
+if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+  COMPOSE_DIR="/opt/remnawave/panel"
 fi
 
-if [ -d /opt/remnawave/subscription ] && [ -f /opt/remnawave/subscription/docker-compose.yml ]; then
-
-  echo ">>> Обновление образов страницы подписки..."
-
-  if [ -f /opt/remnawave/subscription/.env ]; then
-    grep -q 'REMNAWAVE_PANEL_URL' /opt/remnawave/subscription/.env || echo 'REMNAWAVE_PANEL_URL=http://remnawave:3000' >> /opt/remnawave/subscription/.env
+DB_PASS=""
+DB_USER="postgres"
+DB_NAME="remnawave"
+for env_f in "${COMPOSE_DIR}/.env" /opt/remnawave/.env /opt/remnawave/panel/.env; do
+  if [ -f "$env_f" ]; then
+    p=$(grep -E '^POSTGRES_PASSWORD=' "$env_f" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+    [ -n "$p" ] && DB_PASS="$p"
+    u=$(grep -E '^POSTGRES_USER=' "$env_f" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+    [ -n "$u" ] && DB_USER="$u"
+    d=$(grep -E '^POSTGRES_DB=' "$env_f" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+    [ -n "$d" ] && DB_NAME="$d"
+    if [ -n "$DB_PASS" ]; then break; fi
   fi
+done
 
-  cd /opt/remnawave/subscription && docker compose pull && docker compose up -d --remove-orphans
-
-  UPDATED_COUNT=$((UPDATED_COUNT + 1))
-
+if [ -z "$DB_PASS" ]; then
+  echo "Файл конфигурации с POSTGRES_PASSWORD не найден в /opt/remnawave"
+  exit 1
 fi
 
 DB_PASS_ESC=$(printf '%s' "$DB_PASS" | sed "s/'/''/g")
 
-docker exec remnawave-db psql -U postgres -d postgres -c "ALTER USER postgres WITH PASSWORD '$DB_PASS_ESC';"
+docker exec remnawave-db psql -U postgres -d postgres -c "ALTER USER \"$DB_USER\" WITH PASSWORD '$DB_PASS_ESC';" 2>/dev/null || \
+docker exec remnawave-db psql -U postgres -d postgres -c "ALTER USER postgres WITH PASSWORD '$DB_PASS_ESC';" 2>/dev/null || true
 
-docker compose -f /opt/remnawave/panel/docker-compose.yml restart remnawave
+cd "$COMPOSE_DIR" && docker compose restart remnawave 2>/dev/null || docker restart remnawave 2>/dev/null || true
 
-for i in $(seq 1 25); do
-
-  if docker logs remnawave --tail 15 2>&1 | grep -q 'Nest application successfully started'; then
-
+for i in $(seq 1 30); do
+  if docker logs remnawave --tail 15 2>&1 | grep -qE 'Nest application successfully started|Listening on'; then
     break
-
   fi
-
   sleep 1
-
 done
-
 `
 
 	out, err := session.CombinedOutput(cmd)
@@ -1378,18 +1373,26 @@ func AttachNodeSecret(server types.SavedServer, secretKey string) types.CommandR
 
 
 
-	cmd := fmt.Sprintf(`mkdir -p /opt/remnawave/node && echo '%s' | base64 -d > /opt/remnawave/node/docker-compose.yml
-
-command -v ufw >/dev/null 2>&1 && ufw allow 2222/tcp >/dev/null 2>&1 || true
-
-cd /opt/remnawave/node && docker compose down 2>/dev/null || true
-
-cd /opt/remnawave/node && docker compose up -d
-
-sleep 2
-
-docker compose ps
-
+	cmd := fmt.Sprintf(`
+COMPOSE_CONTENT=$(echo '%s' | base64 -d)
+if [ -f /opt/remnawave/docker-compose.yml ] && grep -q 'remnanode:' /opt/remnawave/docker-compose.yml; then
+  echo "Обнаружен единый all-in-one стек (/opt/remnawave)..."
+  EXTRACTED_KEY=$(echo "$COMPOSE_CONTENT" | grep -oE 'SECRET_KEY=.*|SECRET_KEY:.*' | head -n1 | cut -d= -f2- | cut -d: -f2- | tr -d '"'\'' \r\n' || true)
+  if [ -n "$EXTRACTED_KEY" ]; then
+    sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${EXTRACTED_KEY}|g" /opt/remnawave/.env 2>/dev/null || true
+    sed -i "s|SECRET_KEY:.*|SECRET_KEY: \"${EXTRACTED_KEY}\"|g" /opt/remnawave/docker-compose.yml 2>/dev/null || true
+  fi
+  cd /opt/remnawave && docker compose up -d remnanode
+  docker ps --filter "name=remnanode"
+else
+  mkdir -p /opt/remnawave/node
+  echo "$COMPOSE_CONTENT" > /opt/remnawave/node/docker-compose.yml
+  command -v ufw >/dev/null 2>&1 && ufw allow 2222/tcp >/dev/null 2>&1 || true
+  cd /opt/remnawave/node && docker compose down 2>/dev/null || true
+  cd /opt/remnawave/node && docker compose up -d
+  sleep 2
+  docker compose ps
+fi
 `, b64Compose)
 
 
@@ -1724,142 +1727,129 @@ func ResetSuperadmin(server types.SavedServer) types.CommandResult {
 
 
 	cmd := `
+COMPOSE_DIR="/opt/remnawave"
+if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+  COMPOSE_DIR="/opt/remnawave/panel"
+fi
 
-docker exec -u postgres remnawave-db psql -U postgres -d postgres -c "TRUNCATE TABLE admin CASCADE;" 2>/dev/null || true
-
-docker compose -f /opt/remnawave/panel/docker-compose.yml restart remnawave-redis remnawave >/dev/null 2>&1 || true
-
-for i in $(seq 1 25); do
-
-  if docker logs remnawave --tail 15 2>&1 | grep -q 'Nest application successfully started'; then
-
+DB_USER="postgres"
+DB_NAME="remnawave"
+for env_f in "${COMPOSE_DIR}/.env" /opt/remnawave/.env /opt/remnawave/panel/.env; do
+  if [ -f "$env_f" ]; then
+    u=$(grep -E '^POSTGRES_USER=' "$env_f" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+    [ -n "$u" ] && DB_USER="$u"
+    d=$(grep -E '^POSTGRES_DB=' "$env_f" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+    [ -n "$d" ] && DB_NAME="$d"
     break
-
   fi
-
-  sleep 1
-
 done
 
-echo "Супер-администратор сброшен. Панель готова к созданию нового администратора!"
+# 1. Truncate user tables and tokens across possible schemas
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'remnawave-db'; then
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "User" CASCADE;' 2>/dev/null || \
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "Admin" CASCADE;' 2>/dev/null || \
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE users CASCADE;' 2>/dev/null || \
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d postgres -c 'TRUNCATE TABLE "User" CASCADE;' 2>/dev/null || true
 
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "RefreshToken" CASCADE;' 2>/dev/null || true
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "Session" CASCADE;' 2>/dev/null || true
+fi
+
+# 2. Try CLI reset command inside remnawave container if present
+docker exec remnawave sh -c 'cli reset-admin || remnawave reset-admin' 2>/dev/null || true
+
+# 3. Wipe stale tokens & credentials
+rm -f /opt/remnawave/token /opt/remnawave/panel/token /opt/remnawave/credentials.txt /opt/remnawave/panel/credentials.txt 2>/dev/null || true
+
+# 4. Restart services
+cd "$COMPOSE_DIR" && docker compose restart remnawave-redis remnawave 2>/dev/null || docker restart remnawave 2>/dev/null || true
+
+# 5. Wait for NestJS readiness
+for i in $(seq 1 30); do
+  if docker logs remnawave --tail 20 2>&1 | grep -qE 'Nest application successfully started|Listening on'; then
+    break
+  fi
+  sleep 1
+done
+
+echo "Суперадминистратор успешно сброшен. Откройте панель в браузере для создания новой учетной записи!"
 `
 
 	out, err := session.CombinedOutput(cmd)
-
 	if err != nil {
-
 		return types.CommandResult{Success: false, Error: string(out)}
-
 	}
-
 	return types.CommandResult{Success: true, Output: strings.TrimSpace(string(out))}
-
 }
 
-
-
 func RenewSSL(server types.SavedServer) types.CommandResult {
-
 	client, err := getSSHClient(server)
-
 	if err != nil {
-
 		return types.CommandResult{Success: false, Error: err.Error()}
-
 	}
-
 	defer client.Close()
 
-
-
 	session, err := client.NewSession()
-
 	if err != nil {
-
 		return types.CommandResult{Success: false, Error: err.Error()}
-
 	}
-
 	defer session.Close()
 
-
-
 	cmd := `
+sync_certs() {
+  local cert_file="$1"
+  local key_file="$2"
+  if [ -f "$cert_file" ] && [ -f "$key_file" ]; then
+    mkdir -p /opt/remnawave/ssl /opt/remnawave/nginx 2>/dev/null || true
+    cp -fL "$cert_file" /opt/remnawave/ssl/fullchain.pem 2>/dev/null || true
+    cp -fL "$key_file" /opt/remnawave/ssl/privkey.key 2>/dev/null || true
+    cp -fL "$cert_file" /opt/remnawave/nginx/fullchain.pem 2>/dev/null || true
+    cp -fL "$key_file" /opt/remnawave/nginx/privkey.key 2>/dev/null || true
+  fi
+}
+
+restart_proxy() {
+  docker restart remnawave-nginx 2>/dev/null || docker restart remnawave-caddy 2>/dev/null || true
+}
 
 if [ -x ~/.acme.sh/acme.sh ]; then
-
   echo ">>> Обновление SSL сертификатов через acme.sh..."
-
   ~/.acme.sh/acme.sh --renew-all --force 2>&1 || true
-
   ACME_DOMAIN=$(ls -1 ~/.acme.sh/ 2>/dev/null | grep -v 'ca\|acme.sh\|deploy' | head -n 1)
-
   if [ -n "$ACME_DOMAIN" ] && [ -f ~/.acme.sh/$ACME_DOMAIN/fullchain.cer ]; then
-
-    cp -fL ~/.acme.sh/$ACME_DOMAIN/fullchain.cer /opt/remnawave/nginx/fullchain.pem 2>/dev/null || true
-
-    cp -fL ~/.acme.sh/$ACME_DOMAIN/$ACME_DOMAIN.key /opt/remnawave/nginx/privkey.key 2>/dev/null || true
-
+    sync_certs ~/.acme.sh/$ACME_DOMAIN/fullchain.cer ~/.acme.sh/$ACME_DOMAIN/$ACME_DOMAIN.key
   fi
-
-  docker restart remnawave-nginx 2>/dev/null || true
-
+  restart_proxy
   echo "SSL сертификаты Let's Encrypt (acme.sh) успешно обновлены!"
 
 elif command -v docker >/dev/null 2>&1 && [ -d /etc/letsencrypt/live ]; then
-
-  docker stop remnawave-nginx 2>/dev/null || true
-
+  docker stop remnawave-nginx remnawave-caddy 2>/dev/null || true
   echo ">>> Обновление SSL сертификатов через Docker Certbot..."
-
   docker run --rm -p 80:80 \
     -v /etc/letsencrypt:/etc/letsencrypt \
     -v /var/lib/letsencrypt:/var/lib/letsencrypt \
     certbot/certbot renew --non-interactive 2>&1 || true
-
   DOMAIN=$(ls -1 /etc/letsencrypt/live/ 2>/dev/null | grep -v 'README' | head -n 1)
-
   if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-
-    cp -fL "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" /opt/remnawave/nginx/fullchain.pem 2>/dev/null || true
-
-    cp -fL "/etc/letsencrypt/live/$DOMAIN/privkey.pem" /opt/remnawave/nginx/privkey.key 2>/dev/null || true
-
+    sync_certs "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/privkey.pem"
   fi
-
-  docker start remnawave-nginx 2>/dev/null || true
-
+  docker start remnawave-nginx remnawave-caddy 2>/dev/null || restart_proxy
   echo "SSL сертификаты Let's Encrypt (Docker Certbot) успешно обновлены!"
 
 elif command -v certbot >/dev/null 2>&1; then
-
-  docker stop remnawave-nginx 2>/dev/null || true
-
+  docker stop remnawave-nginx remnawave-caddy 2>/dev/null || true
   certbot renew --non-interactive 2>&1
-
   DOMAIN=$(ls -1 /etc/letsencrypt/live/ 2>/dev/null | grep -v 'README' | head -n 1)
-
   if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-
-    cp -fL "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" /opt/remnawave/nginx/fullchain.pem 2>/dev/null || true
-
-    cp -fL "/etc/letsencrypt/live/$DOMAIN/privkey.pem" /opt/remnawave/nginx/privkey.key 2>/dev/null || true
-
+    sync_certs "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/privkey.pem"
   fi
-
-  docker start remnawave-nginx 2>/dev/null || true
-
+  docker start remnawave-nginx remnawave-caddy 2>/dev/null || restart_proxy
   echo "SSL сертификаты Let's Encrypt (Certbot) успешно обновлены!"
 
 else
-
   echo "Ни acme.sh, ни Certbot не обнаружены на сервере."
-
   exit 1
-
 fi
-
 `
 
 	out, err := session.CombinedOutput(cmd)
@@ -2452,6 +2442,20 @@ func UpdateStackImages(server types.SavedServer) types.CommandResult {
 which jq >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1 || true)
 UPDATED_COUNT=0
 
+# 0. Автоматический страховочный снимок базы данных перед обновлением стека
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'remnawave-db'; then
+  echo ">>> Создание страховочного снимка базы данных перед обновлением..."
+  mkdir -p /opt/remnawave/backups 2>/dev/null || true
+  DB_USER=$(grep -E '^POSTGRES_USER=' /opt/remnawave/.env /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+  [ -z "$DB_USER" ] && DB_USER="postgres"
+  DB_NAME=$(grep -E '^POSTGRES_DB=' /opt/remnawave/.env /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+  [ -z "$DB_NAME" ] && DB_NAME="remnawave"
+  docker exec -u postgres remnawave-db pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-privileges -F c -Z 9 > /opt/remnawave/backups/pre_update_db.dump 2>/dev/null || true
+  if [ -s /opt/remnawave/backups/pre_update_db.dump ]; then
+    echo "Страховочный снимок БД сохранен: /opt/remnawave/backups/pre_update_db.dump"
+  fi
+fi
+
 # 1. Автоматическая проверка и перевыпуск токена страницы подписок (если панель активна)
 if docker ps 2>/dev/null | grep -q remnawave; then
   echo ">>> Проверка и синхронизация токена страницы подписок..."
@@ -2471,16 +2475,19 @@ if docker ps 2>/dev/null | grep -q remnawave; then
       fi
     fi
 
-    # 2. Если мастер-токен отсутствует, считываем пароль администратора
+    # 2. Если мастер-токен отсутствует, считываем логин и пароль администратора
     if [ -z "$ACCESS_TOKEN" ]; then
-      ADMIN_USER="admin"
+      ADMIN_USER=""
       ADMIN_PASS=""
       for cred_file in /opt/remnawave/credentials.txt /opt/remnawave/.env /opt/remnawave/panel/.env; do
         if [ -f "$cred_file" ]; then
+          u=$(grep -E '^ADMIN_USERNAME=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+          if [ -n "$u" ] && [ -z "$ADMIN_USER" ]; then ADMIN_USER="$u"; fi
           p=$(grep -E '^ADMIN_PASSWORD=|^INIT_ADMIN_PASSWORD=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
-          if [ -n "$p" ]; then ADMIN_PASS="$p"; break; fi
+          if [ -n "$p" ] && [ -z "$ADMIN_PASS" ]; then ADMIN_PASS="$p"; fi
         fi
       done
+      [ -z "$ADMIN_USER" ] && ADMIN_USER="admin"
 
       if [ -n "$ADMIN_PASS" ]; then
         LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
@@ -2728,35 +2735,21 @@ func ConfigureRealitySelfSteal(server types.SavedServer, fallbackDomain string) 
 
 
 	script := fmt.Sprintf(`
-
 echo ">>> Проверка и настройка VLESS Reality SelfSteal..."
 
-NODE_DIR="/opt/remnawave/node"
-
-if [ ! -d "$NODE_DIR" ]; then
-
-  echo "Каталог $NODE_DIR не обнаружен. Установите компонент Remnanode на этом сервере."
-
+if ! docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q 'remnanode'; then
+  echo "Контейнер ноды remnanode не обнаружен на сервере. Сначала разверните или запустите Remnanode."
   exit 1
-
 fi
 
-
-
-if docker ps --format '{{.Names}}' | grep -q "remnanode"; then
-
-  echo "Нода remnanode активна."
-
-  echo "Архитектура SelfSteal готова: используйте dest/fallback = %s в настройках ноды в панели Remnawave."
-
-  echo "При подозрительном трафике или активном зондировании Xray отдает локальный маскировочный сайт."
-
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'remnanode'; then
+  echo "Нода remnanode активна и работает."
+  echo "Архитектура SelfSteal готова: укажите dest/fallback = %s в настройках ноды в панели Remnawave."
+  echo "При проверках сканеров ТСПУ или недоверенном трафике нода будет прозрачно отдавать локальный маскировочный сайт."
 else
-
-  echo "Контейнер remnanode не запущен."
-
+  echo "Контейнер remnanode найден, но находится в остановленном состоянии. Попробуйте перезапустить ноду."
+  exit 1
 fi
-
 `, fallbackDomain)
 
 
@@ -2811,14 +2804,17 @@ if [ -f /opt/remnawave/token ]; then
 fi
 
 if [ -z "$ACCESS_TOKEN" ]; then
-  ADMIN_USER="admin"
+  ADMIN_USER=""
   ADMIN_PASS=""
   for cred_file in /opt/remnawave/credentials.txt /opt/remnawave/.env /opt/remnawave/panel/.env; do
     if [ -f "$cred_file" ]; then
+      u=$(grep -E '^ADMIN_USERNAME=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+      if [ -n "$u" ] && [ -z "$ADMIN_USER" ]; then ADMIN_USER="$u"; fi
       p=$(grep -E '^ADMIN_PASSWORD=|^INIT_ADMIN_PASSWORD=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
-      if [ -n "$p" ]; then ADMIN_PASS="$p"; break; fi
+      if [ -n "$p" ] && [ -z "$ADMIN_PASS" ]; then ADMIN_PASS="$p"; fi
     fi
   done
+  [ -z "$ADMIN_USER" ] && ADMIN_USER="admin"
 
   if [ -n "$ADMIN_PASS" ]; then
     LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
@@ -2908,7 +2904,7 @@ func UninstallStack(server types.SavedServer, purgeData bool) types.CommandResul
 
 	cmd := fmt.Sprintf(`
 echo "==> Остановка и удаление контейнеров Remnawave..."
-for c in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'remna|caddy|nginx'); do
+for c in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^remnawave|^remnanode'); do
   docker rm -f "$c" 2>/dev/null || true
 done
 
@@ -2929,10 +2925,15 @@ if [ "$PURGE_DATA" = "true" ]; then
   docker network rm remnawave-network 2>/dev/null || true
 fi
 
-echo "==> Сброс правил фаервола UFW..."
+echo "==> Сброс правил фаерволов UFW и nftables..."
 if command -v ufw >/dev/null 2>&1; then
   ufw delete allow 8444/tcp 2>/dev/null || true
   ufw delete allow 2222/tcp 2>/dev/null || true
+fi
+
+if command -v nft >/dev/null 2>&1; then
+  nft delete table inet remna_mask 2>/dev/null || true
+  nft delete table inet remna_antiabuse 2>/dev/null || true
 fi
 
 echo "SUCCESS_UNINSTALLED"
