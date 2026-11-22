@@ -129,6 +129,14 @@ type BackupInfo struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type RestoreBackupResult struct {
+	Success          bool   `json:"success"`
+	SafetyBackupFile string `json:"safety_backup_file,omitempty"`
+	ScopeApplied     string `json:"scope_applied"`
+	Output           string `json:"output"`
+	Error            string `json:"error,omitempty"`
+}
+
 type ServerStatusResult struct {
 	Success             bool            `json:"success"`
 	HostInfo            string          `json:"host_info"`

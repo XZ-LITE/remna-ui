@@ -108,7 +108,7 @@ func TestResilience_InvalidInputFailsFast(t *testing.T) {
 	}
 
 	// 2. RestoreBackup with invalid name
-	resRestore := RestoreBackup(dummyServer, "../../etc/shadow")
+	resRestore := RestoreBackup(dummyServer, "../../etc/shadow", "all", false)
 	if resRestore.Success || resRestore.Error == "" {
 		t.Errorf("RestoreBackup should fail fast on path traversal")
 	}

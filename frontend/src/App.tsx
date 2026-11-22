@@ -2671,41 +2671,32 @@ export function App() {
 
 
   // Restore Backup
-
-  const handleRestoreBackup = async (srv: types.SavedServer, fileName: string) => {
-
+  const handleRestoreBackup = async (
+    srv: types.SavedServer,
+    fileName: string,
+    scope: string = "all",
+    createSafetyBackup: boolean = true
+  ) => {
     const key = `restore-${srv.id}`;
-
     setActionLoading((prev) => ({ ...prev, [key]: true }));
-
     try {
-
-      const res = await RestoreBackup(srv, fileName);
-
-      if (res.success) {
-
-        addToast("success", "Сервер успешно восстановлен из резервной копии!");
-
+      const res = await RestoreBackup(srv, fileName, scope, createSafetyBackup);
+      if (res && res.success) {
+        if (res.safety_backup_file) {
+          addToast("success", `Сервер успешно восстановлен! Создан страховочный снимок: ${res.safety_backup_file}`);
+        } else {
+          addToast("success", "Сервер успешно восстановлен из резервной копии!");
+        }
         setRestoreModal(null);
-
         handleInspectServer(srv);
-
       } else {
-
-        addToast("error", `Ошибка восстановления: ${res.error}`);
-
+        addToast("error", `Ошибка восстановления: ${res?.error || "Неизвестная ошибка"}`);
       }
-
     } catch (e: any) {
-
       addToast("error", `Сбой восстановления: ${e}`);
-
     } finally {
-
       setActionLoading((prev) => ({ ...prev, [key]: false }));
-
     }
-
   };
 
 
@@ -8862,17 +8853,13 @@ export function App() {
       {restoreModal && (
 
         <RestoreBackupModal
-
           server={restoreModal.server}
-
           fileName={restoreModal.fileName}
-
           loading={Boolean(actionLoading[`restore-${restoreModal.server.id}`])}
-
           onClose={() => setRestoreModal(null)}
-
-          onConfirm={() => handleRestoreBackup(restoreModal.server, restoreModal.fileName)}
-
+          onConfirm={(scope, createSafetyBackup) =>
+            handleRestoreBackup(restoreModal.server, restoreModal.fileName, scope, createSafetyBackup)
+          }
         />
 
       )}

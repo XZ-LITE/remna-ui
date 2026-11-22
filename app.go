@@ -284,8 +284,8 @@ func (a *App) DownloadBackup(server types.SavedServer, fileName string) types.Co
 	return admin.DownloadBackupStream(server, fileName, targetPath)
 }
 
-func (a *App) RestoreBackup(server types.SavedServer, fileName string) types.CommandResult {
-	return admin.RestoreBackup(server, fileName)
+func (a *App) RestoreBackup(server types.SavedServer, fileName string, scope string, createSafetyBackup bool) types.RestoreBackupResult {
+	return admin.RestoreBackup(server, fileName, scope, createSafetyBackup)
 }
 
 func (a *App) UpdateStackImages(server types.SavedServer) types.CommandResult {

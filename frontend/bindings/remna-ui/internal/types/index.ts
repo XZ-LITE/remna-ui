@@ -20,6 +20,7 @@ export {
     PanelSquadItem,
     PortProbeSummary,
     ProbeNodeResult,
+    RestoreBackupResult,
     SSHTestResult,
     SavedServer,
     ServerMetrics,

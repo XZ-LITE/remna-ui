@@ -966,6 +966,37 @@ export class ProbeNodeResult {
     }
 }
 
+export class RestoreBackupResult {
+    "success": boolean;
+    "safety_backup_file"?: string;
+    "scope_applied": string;
+    "output": string;
+    "error"?: string;
+
+    /** Creates a new RestoreBackupResult instance. */
+    constructor($$source: Partial<RestoreBackupResult> = {}) {
+        if (!("success" in $$source)) {
+            this["success"] = false;
+        }
+        if (!("scope_applied" in $$source)) {
+            this["scope_applied"] = "";
+        }
+        if (!("output" in $$source)) {
+            this["output"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RestoreBackupResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): RestoreBackupResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new RestoreBackupResult($$parsedSource as Partial<RestoreBackupResult>);
+    }
+}
+
 export class SSHTestResult {
     "success": boolean;
     "os": string;

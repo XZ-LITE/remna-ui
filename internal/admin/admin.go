@@ -1531,95 +1531,102 @@ echo "Зеркала реестра Docker и локальная ротация 
 
 
 func CreateBackup(server types.SavedServer) types.CommandResult {
-
-	client, err := getSSHClient(server)
-
+	session, release, err := getPooledSession(server)
 	if err != nil {
-
 		return types.CommandResult{Success: false, Error: err.Error()}
-
 	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer session.Close()
-
-
+	defer release()
 
 	cmd := `
-
+set -e
 mkdir -p /opt/remnawave/backups
-
 STAMP=$(date +%Y%m%d_%H%M%S)
-
 BACKUP_NAME="remnawave_backup_${STAMP}.tar.gz"
-
 TEMP_DIR=$(mktemp -d)
 
-
-
-# Dump PostgreSQL if container is running
-
-if docker ps --format '{{.Names}}' | grep -q 'remnawave-db'; then
-
-  docker exec -u postgres remnawave-db pg_dump -U postgres postgres > "$TEMP_DIR/database.sql" 2>/dev/null || true
-
+# 1. Parse DB credentials and database name from .env if present
+DB_USER="postgres"
+DB_NAME="postgres"
+if [ -f /opt/remnawave/panel/.env ]; then
+  u=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+  [ -n "$u" ] && DB_USER="$u"
+  d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+  [ -n "$d" ] && DB_NAME="$d"
 fi
 
+# 2. Dump PostgreSQL in binary custom format (-F c -Z 9) with integrity check
+HAS_DUMP="no"
+if docker ps --format '{{.Names}}' | grep -q 'remnawave-db'; then
+  # Check if database exists, fallback to postgres
+  if ! docker exec -u "$DB_USER" remnawave-db psql -U "$DB_USER" -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+    DB_NAME="postgres"
+  fi
 
+  if docker exec -i remnawave-db pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-privileges -F c -Z 9 > "$TEMP_DIR/remnawave.dump" 2>"$TEMP_DIR/dump.err"; then
+    # Verify TOC integrity of the custom dump
+    if docker exec -i remnawave-db pg_restore -l "$TEMP_DIR/remnawave.dump" >/dev/null 2>&1; then
+      HAS_DUMP="yes"
+    else
+      echo "ERR_INTEGRITY: Ошибка валидации дампа PostgreSQL (pg_restore -l завершился сбоем)." >&2
+      cat "$TEMP_DIR/dump.err" >&2
+      rm -rf "$TEMP_DIR"
+      exit 1
+    fi
+  else
+    # Fallback to plain pg_dump if -F c somehow failed
+    if docker exec -i remnawave-db pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-privileges > "$TEMP_DIR/database.sql" 2>/dev/null; then
+      HAS_DUMP="yes"
+    fi
+  fi
+fi
 
-# Copy all .env and docker-compose configs
-
+# 3. Copy all configs
 mkdir -p "$TEMP_DIR/configs"
+[ -f /opt/remnawave/panel/.env ] && cp -rf /opt/remnawave/panel/.env "$TEMP_DIR/configs/panel.env" || true
+[ -f /opt/remnawave/panel/docker-compose.yml ] && cp -rf /opt/remnawave/panel/docker-compose.yml "$TEMP_DIR/configs/panel-compose.yml" || true
+[ -f /opt/remnawave/node/docker-compose.yml ] && cp -rf /opt/remnawave/node/docker-compose.yml "$TEMP_DIR/configs/node-compose.yml" || true
+[ -f /opt/remnawave/nginx/nginx.conf ] && cp -rf /opt/remnawave/nginx/nginx.conf "$TEMP_DIR/configs/nginx.conf" || true
+[ -f /opt/remnawave/nginx/fullchain.pem ] && cp -rf /opt/remnawave/nginx/fullchain.pem "$TEMP_DIR/configs/" || true
+[ -f /opt/remnawave/nginx/privkey.key ] && cp -rf /opt/remnawave/nginx/privkey.key "$TEMP_DIR/configs/" || true
+[ -f /opt/remnawave/caddy/Caddyfile ] && cp -rf /opt/remnawave/caddy/Caddyfile "$TEMP_DIR/configs/Caddyfile" || true
+[ -f /opt/remnawave/caddy/docker-compose.yml ] && cp -rf /opt/remnawave/caddy/docker-compose.yml "$TEMP_DIR/configs/caddy-compose.yml" || true
 
-cp -rf /opt/remnawave/panel/.env "$TEMP_DIR/configs/panel.env" 2>/dev/null || true
+# 4. Copy uploads directory if exists
+if [ -d /opt/remnawave/uploads ]; then
+  mkdir -p "$TEMP_DIR/uploads"
+  cp -rf /opt/remnawave/uploads/* "$TEMP_DIR/uploads/" 2>/dev/null || true
+elif [ -d /opt/remnawave/panel/uploads ]; then
+  mkdir -p "$TEMP_DIR/uploads"
+  cp -rf /opt/remnawave/panel/uploads/* "$TEMP_DIR/uploads/" 2>/dev/null || true
+fi
 
-cp -rf /opt/remnawave/panel/docker-compose.yml "$TEMP_DIR/configs/panel-compose.yml" 2>/dev/null || true
+# 5. Write metadata
+cat << META_EOF > "$TEMP_DIR/backup_meta.info"
+FORMAT_VERSION=2.0
+BACKUP_DATE=$STAMP
+DB_NAME=$DB_NAME
+DB_USER=$DB_USER
+HAS_DUMP=$HAS_DUMP
+META_EOF
 
-cp -rf /opt/remnawave/node/docker-compose.yml "$TEMP_DIR/configs/node-compose.yml" 2>/dev/null || true
-
-cp -rf /opt/remnawave/nginx/nginx.conf "$TEMP_DIR/configs/nginx.conf" 2>/dev/null || true
-
-cp -rf /opt/remnawave/nginx/fullchain.pem "$TEMP_DIR/configs/" 2>/dev/null || true
-
-cp -rf /opt/remnawave/nginx/privkey.key "$TEMP_DIR/configs/" 2>/dev/null || true
-
-cp -rf /opt/remnawave/caddy/Caddyfile "$TEMP_DIR/configs/Caddyfile" 2>/dev/null || true
-
-cp -rf /opt/remnawave/caddy/docker-compose.yml "$TEMP_DIR/configs/caddy-compose.yml" 2>/dev/null || true
-
-
-
+# 6. Create archive
 tar -czf "/opt/remnawave/backups/$BACKUP_NAME" -C "$TEMP_DIR" .
-
 rm -rf "$TEMP_DIR"
 
+# 7. Local retention cleanup (remove older than 14 days, keep at most 10 newest)
+find /opt/remnawave/backups -maxdepth 1 -type f -name "remnawave_backup_*.tar.gz" -mtime +14 -delete 2>/dev/null || true
+ls -1t /opt/remnawave/backups/remnawave_backup_*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f 2>/dev/null || true
+
 SIZE=$(du -h "/opt/remnawave/backups/$BACKUP_NAME" | awk '{print $1}')
-
 echo "Архив успешно создан: $BACKUP_NAME ($SIZE)"
-
 `
 
 	out, err := session.CombinedOutput(cmd)
-
 	if err != nil {
-
 		return types.CommandResult{Success: false, Error: string(out)}
-
 	}
 
 	return types.CommandResult{Success: true, Output: strings.TrimSpace(string(out))}
-
 }
 
 
@@ -2245,146 +2252,185 @@ func DownloadBackupStream(server types.SavedServer, fileName, localPath string) 
 
 
 
-func RestoreBackup(server types.SavedServer, fileName string) types.CommandResult {
-
+func RestoreBackup(server types.SavedServer, fileName string, scope string, createSafetyBackup bool) types.RestoreBackupResult {
 	if !validBackupNameRegex.MatchString(fileName) {
-
-		return types.CommandResult{Success: false, Error: "Недопустимое имя файла бэкапа."}
-
+		return types.RestoreBackupResult{Success: false, Error: "Недопустимое имя файла бэкапа."}
 	}
 
-	client, err := getSSHClient(server)
+	if scope == "" {
+		scope = "all"
+	}
 
+	safetyStr := "no"
+	if createSafetyBackup {
+		safetyStr = "yes"
+	}
+
+	session, release, err := getPooledSession(server)
 	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
+		return types.RestoreBackupResult{Success: false, Error: err.Error()}
 	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: err.Error()}
-
-	}
-
-	defer session.Close()
-
-
+	defer release()
 
 	cmd := fmt.Sprintf(`
-
+set -e
 RESTORE_FILE="/opt/remnawave/backups/%s"
+SCOPE="%s"
+DO_SAFETY="%s"
 
 if [ ! -f "$RESTORE_FILE" ]; then
-
-  echo "Файл бэкапа не найден: $RESTORE_FILE"
-
+  echo "ERR_NOT_FOUND: Файл бэкапа не найден: $RESTORE_FILE" >&2
   exit 1
-
 fi
 
+DATE=$(date +%%Y%%m%%d_%%H%%M%%S)
 
+# 1. Pre-restore Safety Backup if requested
+if [ "$DO_SAFETY" = "yes" ]; then
+  SAFETY_NAME="remnawave_safety_before_restore_${DATE}.tar.gz"
+  SAFETY_DIR=$(mktemp -d)
+  mkdir -p "$SAFETY_DIR/configs"
 
-TEMP_DIR=$(mktemp -d)
+  [ -f /opt/remnawave/panel/.env ] && cp -rf /opt/remnawave/panel/.env "$SAFETY_DIR/configs/panel.env" || true
+  [ -f /opt/remnawave/panel/docker-compose.yml ] && cp -rf /opt/remnawave/panel/docker-compose.yml "$SAFETY_DIR/configs/panel-compose.yml" || true
+  [ -f /opt/remnawave/node/docker-compose.yml ] && cp -rf /opt/remnawave/node/docker-compose.yml "$SAFETY_DIR/configs/node-compose.yml" || true
+  [ -f /opt/remnawave/nginx/nginx.conf ] && cp -rf /opt/remnawave/nginx/nginx.conf "$SAFETY_DIR/configs/nginx.conf" || true
+  [ -f /opt/remnawave/nginx/fullchain.pem ] && cp -rf /opt/remnawave/nginx/fullchain.pem "$SAFETY_DIR/configs/" || true
+  [ -f /opt/remnawave/nginx/privkey.key ] && cp -rf /opt/remnawave/nginx/privkey.key "$SAFETY_DIR/configs/" || true
+  [ -f /opt/remnawave/caddy/Caddyfile ] && cp -rf /opt/remnawave/caddy/Caddyfile "$SAFETY_DIR/configs/Caddyfile" || true
 
-tar -xzf "$RESTORE_FILE" -C "$TEMP_DIR"
-
-
-
-# Восстанавливаем конфигурационные файлы
-
-if [ -d "$TEMP_DIR/configs" ]; then
-
-  mkdir -p /opt/remnawave/panel /opt/remnawave/node /opt/remnawave/nginx /opt/remnawave/caddy
-
-  [ -f "$TEMP_DIR/configs/panel.env" ] && cp -f "$TEMP_DIR/configs/panel.env" /opt/remnawave/panel/.env || true
-
-  [ -f "$TEMP_DIR/configs/panel-compose.yml" ] && cp -f "$TEMP_DIR/configs/panel-compose.yml" /opt/remnawave/panel/docker-compose.yml || true
-
-  [ -f "$TEMP_DIR/configs/node-compose.yml" ] && cp -f "$TEMP_DIR/configs/node-compose.yml" /opt/remnawave/node/docker-compose.yml || true
-
-  [ -f "$TEMP_DIR/configs/nginx.conf" ] && cp -f "$TEMP_DIR/configs/nginx.conf" /opt/remnawave/nginx/nginx.conf || true
-
-  [ -f "$TEMP_DIR/configs/fullchain.pem" ] && cp -f "$TEMP_DIR/configs/fullchain.pem" /opt/remnawave/nginx/fullchain.pem || true
-
-  [ -f "$TEMP_DIR/configs/privkey.key" ] && cp -f "$TEMP_DIR/configs/privkey.key" /opt/remnawave/nginx/privkey.key || true
-
-  [ -f "$TEMP_DIR/configs/Caddyfile" ] && cp -f "$TEMP_DIR/configs/Caddyfile" /opt/remnawave/caddy/Caddyfile || true
-
-  [ -f "$TEMP_DIR/configs/caddy-compose.yml" ] && cp -f "$TEMP_DIR/configs/caddy-compose.yml" /opt/remnawave/caddy/docker-compose.yml || true
-
-fi
-
-
-
-# Если есть дамп базы данных, восстанавливаем его в PostgreSQL
-
-if [ -f "$TEMP_DIR/database.sql" ]; then
-
-  if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
-
-    cd /opt/remnawave/panel && docker compose up -d remnawave-db >/dev/null 2>&1 || true
-
-    sleep 3
-
-    docker exec -i remnawave-db psql -U postgres postgres < "$TEMP_DIR/database.sql" >/dev/null 2>&1 || true
-
+  if docker ps --format '{{.Names}}' | grep -q 'remnawave-db'; then
+    CURR_USER="postgres"
+    CURR_DB="postgres"
+    if [ -f /opt/remnawave/panel/.env ]; then
+      u=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+      [ -n "$u" ] && CURR_USER="$u"
+      d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+      [ -n "$d" ] && CURR_DB="$d"
+    fi
+    docker exec -i remnawave-db pg_dump -U "$CURR_USER" -d "$CURR_DB" --clean --if-exists --no-owner --no-privileges -F c -Z 9 > "$SAFETY_DIR/remnawave.dump" 2>/dev/null || true
   fi
 
+  tar -czf "/opt/remnawave/backups/$SAFETY_NAME" -C "$SAFETY_DIR" . 2>/dev/null || true
+  rm -rf "$SAFETY_DIR"
+  echo "SAFETY_BACKUP:$SAFETY_NAME"
 fi
 
+TEMP_DIR=$(mktemp -d)
+tar -xzf "$RESTORE_FILE" -C "$TEMP_DIR"
 
+# 2. Restore Configuration Files & Uploads (if scope is 'all' or 'configs_only')
+if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "configs_only" ]; then
+  if [ -d "$TEMP_DIR/configs" ]; then
+    mkdir -p /opt/remnawave/panel /opt/remnawave/node /opt/remnawave/nginx /opt/remnawave/caddy
+    [ -f "$TEMP_DIR/configs/panel.env" ] && cp -f "$TEMP_DIR/configs/panel.env" /opt/remnawave/panel/.env || true
+    [ -f "$TEMP_DIR/configs/panel-compose.yml" ] && cp -f "$TEMP_DIR/configs/panel-compose.yml" /opt/remnawave/panel/docker-compose.yml || true
+    [ -f "$TEMP_DIR/configs/node-compose.yml" ] && cp -f "$TEMP_DIR/configs/node-compose.yml" /opt/remnawave/node/docker-compose.yml || true
+    [ -f "$TEMP_DIR/configs/nginx.conf" ] && cp -f "$TEMP_DIR/configs/nginx.conf" /opt/remnawave/nginx/nginx.conf || true
+    [ -f "$TEMP_DIR/configs/fullchain.pem" ] && cp -f "$TEMP_DIR/configs/fullchain.pem" /opt/remnawave/nginx/fullchain.pem || true
+    [ -f "$TEMP_DIR/configs/privkey.key" ] && cp -f "$TEMP_DIR/configs/privkey.key" /opt/remnawave/nginx/privkey.key || true
+    [ -f "$TEMP_DIR/configs/Caddyfile" ] && cp -f "$TEMP_DIR/configs/Caddyfile" /opt/remnawave/caddy/Caddyfile || true
+    [ -f "$TEMP_DIR/configs/caddy-compose.yml" ] && cp -f "$TEMP_DIR/configs/caddy-compose.yml" /opt/remnawave/caddy/docker-compose.yml || true
+  fi
+
+  if [ -d "$TEMP_DIR/uploads" ]; then
+    mkdir -p /opt/remnawave/uploads
+    cp -rf "$TEMP_DIR/uploads"/* /opt/remnawave/uploads/ 2>/dev/null || true
+  fi
+fi
+
+# 3. Restore Database (if scope is 'all' or 'db_only')
+if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "db_only" ]; then
+  DUMP_FILE=""
+  IS_CUSTOM="no"
+  if [ -f "$TEMP_DIR/remnawave.dump" ]; then
+    DUMP_FILE="$TEMP_DIR/remnawave.dump"
+    IS_CUSTOM="yes"
+  elif [ -f "$TEMP_DIR/database.sql" ]; then
+    DUMP_FILE="$TEMP_DIR/database.sql"
+    IS_CUSTOM="no"
+  fi
+
+  if [ -n "$DUMP_FILE" ]; then
+    TARGET_DB_USER="postgres"
+    TARGET_DB_NAME="postgres"
+    if [ -f /opt/remnawave/panel/.env ]; then
+      u=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+      [ -n "$u" ] && TARGET_DB_USER="$u"
+      d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+      [ -n "$d" ] && TARGET_DB_NAME="$d"
+    fi
+
+    if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+      cd /opt/remnawave/panel
+      docker compose down 2>/dev/null || true
+      docker compose up -d remnawave-db
+
+      # Wait for PostgreSQL to become ready
+      READY=false
+      for i in $(seq 1 30); do
+        if docker exec remnawave-db pg_isready -U "$TARGET_DB_USER" >/dev/null 2>&1; then
+          READY=true
+          break
+        fi
+        sleep 1
+      done
+
+      if [ "$READY" = "true" ]; then
+        # Terminate active client connections
+        docker exec -i remnawave-db psql -U "$TARGET_DB_USER" -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$TARGET_DB_NAME' AND pid <> pg_backend_pid();" 2>/dev/null || true
+
+        # Recreate clean database
+        docker exec -i remnawave-db psql -U "$TARGET_DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$TARGET_DB_NAME\"; CREATE DATABASE \"$TARGET_DB_NAME\" OWNER \"$TARGET_DB_USER\";" 2>/dev/null || true
+
+        # Import dump
+        if [ "$IS_CUSTOM" = "yes" ]; then
+          docker exec -i remnawave-db pg_restore -U "$TARGET_DB_USER" -d "$TARGET_DB_NAME" --no-owner --no-privileges -v < "$DUMP_FILE" 2>/dev/null || true
+        else
+          docker exec -i remnawave-db psql -U "$TARGET_DB_USER" -d "$TARGET_DB_NAME" < "$DUMP_FILE" 2>/dev/null || true
+        fi
+      fi
+    fi
+  fi
+fi
 
 rm -rf "$TEMP_DIR"
 
-
-
-# Перезапускаем контейнеры
-
+# 4. Restart services
 if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
-
-  cd /opt/remnawave/panel && docker compose restart >/dev/null 2>&1 || true
-
+  cd /opt/remnawave/panel && docker compose up -d 2>/dev/null || true
 fi
-
 if [ -f /opt/remnawave/node/docker-compose.yml ]; then
-
-  cd /opt/remnawave/node && docker compose restart >/dev/null 2>&1 || true
-
+  cd /opt/remnawave/node && docker compose restart 2>/dev/null || true
 fi
-
 if [ -f /opt/remnawave/caddy/docker-compose.yml ]; then
-
-  cd /opt/remnawave/caddy && docker compose restart >/dev/null 2>&1 || true
-
+  cd /opt/remnawave/caddy && docker compose restart 2>/dev/null || true
 fi
-
-docker restart remna-nginx remnawave-nginx remnawave-caddy >/dev/null 2>&1 || true
-
-
+docker restart remna-nginx remnawave-nginx remnawave-caddy 2>/dev/null || true
 
 echo "Резервная копия успешно восстановлена, службы перезапущены!"
-
-`, fileName)
-
-
+`, fileName, scope, safetyStr)
 
 	out, err := session.CombinedOutput(cmd)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: string(out)}
-
+	outputStr := string(out)
+	if err != nil && len(outputStr) == 0 {
+		return types.RestoreBackupResult{Success: false, ScopeApplied: scope, Error: string(out)}
 	}
 
-	return types.CommandResult{Success: true, Output: strings.TrimSpace(string(out))}
+	safetyFile := ""
+	for _, line := range strings.Split(outputStr, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "SAFETY_BACKUP:") {
+			safetyFile = strings.TrimPrefix(trimmed, "SAFETY_BACKUP:")
+		}
+	}
 
+	return types.RestoreBackupResult{
+		Success:          true,
+		SafetyBackupFile: safetyFile,
+		ScopeApplied:     scope,
+		Output:           strings.TrimSpace(outputStr),
+	}
 }
 
 

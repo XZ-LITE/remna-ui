@@ -210,9 +210,9 @@ export function RestartContainer(server: types$0.SavedServer, container: string)
     });
 }
 
-export function RestoreBackup(server: types$0.SavedServer, fileName: string): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByID(1800244779, server, fileName).then(($result: any) => {
-        return $$createType0($result);
+export function RestoreBackup(server: types$0.SavedServer, fileName: string, scope: string, createSafetyBackup: boolean): $CancellablePromise<types$0.RestoreBackupResult> {
+    return $Call.ByID(1800244779, server, fileName, scope, createSafetyBackup).then(($result: any) => {
+        return $$createType18($result);
     });
 }
 
@@ -234,13 +234,13 @@ export function StartDeployment(plan: types$0.DeploymentPlan): $CancellablePromi
 
 export function TestPanelAPI(panelURL: string, apiToken: string): $CancellablePromise<types$0.PanelInfoResult> {
     return $Call.ByID(2892355839, panelURL, apiToken).then(($result: any) => {
-        return $$createType18($result);
+        return $$createType19($result);
     });
 }
 
 export function TestSSH(host: string, port: number, user: string, password: string, keyPath: string): $CancellablePromise<types$0.SSHTestResult> {
     return $Call.ByID(4121859417, host, port, user, password, keyPath).then(($result: any) => {
-        return $$createType19($result);
+        return $$createType20($result);
     });
 }
 
@@ -287,5 +287,6 @@ const $$createType14 = types$0.ServerStatusResult.createFrom;
 const $$createType15 = types$0.SavedServer.createFrom;
 const $$createType16 = $Create.Array($$createType15);
 const $$createType17 = types$0.VPNProbeResult.createFrom;
-const $$createType18 = types$0.PanelInfoResult.createFrom;
-const $$createType19 = types$0.SSHTestResult.createFrom;
+const $$createType18 = types$0.RestoreBackupResult.createFrom;
+const $$createType19 = types$0.PanelInfoResult.createFrom;
+const $$createType20 = types$0.SSHTestResult.createFrom;
