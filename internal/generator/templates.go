@@ -408,6 +408,8 @@ func RenderNodeCompose(nodePort int, secretKey string) string {
     hostname: remnanode
     restart: always
     network_mode: host
+    cap_add:
+      - NET_ADMIN
     environment:
       NODE_PORT: "%d"
       SECRET_KEY: "%s"
@@ -491,6 +493,20 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
     }
+
+    # Public client subscription links bypass security gate
+    location ^~ /sub/ {
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
 `, cleanGate, cleanGate)
 
 		if useCamouflage {
@@ -548,6 +564,23 @@ server {
 
     client_max_body_size 50m;
 %s
+    # SSE Stream for real-time users list updates
+    location = /api/users/stream {
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        chunked_transfer_encoding off;
+    }
+
     location / {%s
         proxy_http_version 1.1;
         proxy_pass http://remnawave;
@@ -629,8 +662,8 @@ func RenderCaddyfile(domain, subDomain string, subEnabled bool, secretGate strin
         redir / 302
     }
 
-    @api_calls path /api/*
-    handle @api_calls {
+    @public_calls path /api/* /sub/*
+    handle @public_calls {
         reverse_proxy remnawave:3000
     }
 
@@ -1011,6 +1044,20 @@ func RenderStealthNginxConf(panelDomain, subDomain, decoyDomain, secretGate stri
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
     }
+
+    # Public client subscription links bypass security gate
+    location ^~ /sub/ {
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $proxy_protocol_addr;
+        proxy_set_header X-Forwarded-For $proxy_protocol_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
 `, cleanGate, cleanGate)
 
 		if useCamouflage {
@@ -1151,6 +1198,23 @@ server {
 
     client_max_body_size 50m;
 %s
+    # SSE Stream for real-time users list updates
+    location = /api/users/stream {
+        proxy_http_version 1.1;
+        proxy_pass http://remnawave;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $proxy_protocol_addr;
+        proxy_set_header X-Forwarded-For $proxy_protocol_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        chunked_transfer_encoding off;
+    }
+
     location / {%s
         proxy_http_version 1.1;
         proxy_pass http://remnawave;
