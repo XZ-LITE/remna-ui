@@ -4,6 +4,7 @@
 export {
     AppUpdateInfo,
     BackupInfo,
+    CleanDiskResult,
     CommandResult,
     ContainerInfo,
     CreateNodeRequest,
@@ -22,5 +23,6 @@ export {
     SSHTestResult,
     SavedServer,
     ServerMetrics,
-    ServerStatusResult
+    ServerStatusResult,
+    VPNProbeResult
 } from "./models.js";

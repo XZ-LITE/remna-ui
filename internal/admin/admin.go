@@ -232,7 +232,7 @@ func getStorePath() string {
 
 	// Auto-migrate from remnawave-beta if target is empty/missing and beta data exists
 	if subDir == "remnawave" {
-		if fi, err := os.Stat(target); os.IsNotExist(err) || fi.Size() == 0 {
+		if fi, err := os.Stat(target); err != nil || fi.Size() == 0 {
 			betaPath := filepath.Join(appData, "remnawave-beta", "servers.json")
 			if betaData, err := os.ReadFile(betaPath); err == nil && len(betaData) > 0 {
 				_ = os.WriteFile(target, betaData, 0600)
@@ -679,10 +679,10 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 	var cmd string
 	if server.Role == "node" {
 		// Lightweight interrogation optimized for Edge Nodes: avoids heavy & non-existent Postgres/Panel checks
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; echo ""; echo "---"; echo "0"; echo "---"; echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; echo "no"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; echo ""; echo "---"; echo "0"; echo "---"; echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; echo "no"; echo "---"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	} else {
 		// Comprehensive interrogation for Master Panel VPS (includes Postgres DB, Backups, and Valkey Sockets)
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "---"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	}
 
 	out, err := session.Output(cmd)
@@ -898,6 +898,15 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 	performanceOptimized := false
 	if len(parts) >= 12 {
 		performanceOptimized = strings.TrimSpace(parts[11]) == "yes"
+	}
+
+	// CPU Steal (% time lost to hypervisor noisy neighbors)
+	if len(parts) >= 13 {
+		stealStr := strings.TrimSpace(parts[12])
+		var stealVal float64
+		if _, err := fmt.Sscanf(stealStr, "%f", &stealVal); err == nil {
+			metrics.CPUSteal = stealVal
+		}
 	}
 
 	RecordServerInspectionResult(server.ID, true)
@@ -3077,3 +3086,98 @@ func isVersionNewer(latest, current string) bool {
 
 	return false
 }
+
+// CleanServerDisk safely performs non-destructive cleanup of unreferenced Docker layers,
+// builder caches, and truncates systemd journal logs, returning disk delta.
+func CleanServerDisk(server types.SavedServer, password string) types.CleanDiskResult {
+	if password != "" {
+		server.Password = password
+	}
+
+	session, release, err := getPooledSession(server)
+	if err != nil {
+		return types.CleanDiskResult{
+			Success: false,
+			Error:   fmt.Sprintf("Ошибка SSH подключения: %v", err),
+		}
+	}
+	defer release()
+
+	cmd := `
+before=$(df -h / | awk 'NR==2{print $4}')
+echo "BEFORE:$before"
+docker system prune -f --volumes=false 2>&1 || true
+docker builder prune -f 2>&1 || true
+journalctl --vacuum-time=2d 2>&1 || true
+journalctl --vacuum-size=100M 2>&1 || true
+rm -rf /tmp/rw_* /tmp/*.tmp /var/log/*.gz /var/log/*.[0-9] 2>/dev/null || true
+after=$(df -h / | awk 'NR==2{print $4}')
+echo "AFTER:$after"
+`
+
+	outBytes, err := session.Output(cmd)
+	output := string(outBytes)
+	if err != nil && len(output) == 0 {
+		return types.CleanDiskResult{
+			Success: false,
+			Output:  output,
+			Error:   fmt.Sprintf("Ошибка при выполнении очистки: %v", err),
+		}
+	}
+
+	spaceBefore := ""
+	spaceAfter := ""
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "BEFORE:") {
+			spaceBefore = strings.TrimPrefix(trimmed, "BEFORE:")
+		} else if strings.HasPrefix(trimmed, "AFTER:") {
+			spaceAfter = strings.TrimPrefix(trimmed, "AFTER:")
+		}
+	}
+
+	freed := ""
+	if spaceBefore != "" && spaceAfter != "" {
+		freed = fmt.Sprintf("Свободно до: %s, свободно после: %s", spaceBefore, spaceAfter)
+	}
+
+	return types.CleanDiskResult{
+		Success:     true,
+		SpaceBefore: spaceBefore,
+		SpaceAfter:  spaceAfter,
+		FreedSpace:  freed,
+		Output:      output,
+	}
+}
+
+// RunServerEgressProbe performs a synthetic egress HTTP 204 probe directly from the target server / remnanode container.
+func RunServerEgressProbe(server types.SavedServer) (bool, int, int, string) {
+	session, release, err := getPooledSession(server)
+	if err != nil {
+		return false, 0, 0, fmt.Sprintf("SSH: %v", err)
+	}
+	defer release()
+
+	cmd := `(docker exec remnanode curl -s -o /dev/null -w "%{http_code}|%{time_total}" https://cp.cloudflare.com/generate_204 --max-time 4 2>/dev/null) || (curl -s -o /dev/null -w "%{http_code}|%{time_total}" https://cp.cloudflare.com/generate_204 --max-time 4 2>/dev/null) || echo "000|0.0"`
+	outBytes, err := session.Output(cmd)
+	if err != nil && len(outBytes) == 0 {
+		return false, 0, 0, fmt.Sprintf("Команда curl не выполнена: %v", err)
+	}
+
+	out := strings.TrimSpace(string(outBytes))
+	parts := strings.Split(out, "|")
+	if len(parts) >= 2 {
+		httpCode, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
+		timeSec, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		latencyMs := int(timeSec * 1000)
+
+		if httpCode == 204 || httpCode == 200 {
+			return true, httpCode, latencyMs, ""
+		}
+		return false, httpCode, latencyMs, fmt.Sprintf("Неожиданный HTTP-ответ: %d", httpCode)
+	}
+
+	return false, 0, 0, fmt.Sprintf("Неверный формат ответа: %s", out)
+}
+
+

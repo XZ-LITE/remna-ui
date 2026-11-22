@@ -113,13 +113,14 @@ type AppUpdateInfo struct {
 }
 
 type ServerMetrics struct {
-	Uptime      string `json:"uptime"`
-	RAMUsedMB   int    `json:"ram_used_mb"`
-	RAMTotalMB  int    `json:"ram_total_mb"`
-	RAMPercent  int    `json:"ram_percent"`
-	DiskUsed    string `json:"disk_used"`
-	DiskTotal   string `json:"disk_total"`
-	DiskPercent int    `json:"disk_percent"`
+	Uptime      string  `json:"uptime"`
+	RAMUsedMB   int     `json:"ram_used_mb"`
+	RAMTotalMB  int     `json:"ram_total_mb"`
+	RAMPercent  int     `json:"ram_percent"`
+	DiskUsed    string  `json:"disk_used"`
+	DiskTotal   string  `json:"disk_total"`
+	DiskPercent int     `json:"disk_percent"`
+	CPUSteal    float64 `json:"cpu_steal"`
 }
 
 type BackupInfo struct {
@@ -256,4 +257,37 @@ type IPBlockCheckResult struct {
 	IsRKNBlocked  bool                `json:"is_rkn_blocked"`
 	CheckedAt     string              `json:"checked_at"`
 }
+
+type CleanDiskResult struct {
+	Success     bool   `json:"success"`
+	SpaceBefore string `json:"space_before"`
+	SpaceAfter  string `json:"space_after"`
+	FreedSpace  string `json:"freed_space,omitempty"`
+	Output      string `json:"output"`
+	Error       string `json:"error,omitempty"`
+}
+
+type VPNProbeResult struct {
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	DecoyDomain    string `json:"decoy_domain"`
+	TCPConnected   bool   `json:"tcp_connected"`
+	TCPLatencyMs   int    `json:"tcp_latency_ms"`
+	TCPError       string `json:"tcp_error,omitempty"`
+	TLSHandshake   bool   `json:"tls_handshake"`
+	TLSLatencyMs   int    `json:"tls_latency_ms"`
+	TLSVersion     string `json:"tls_version,omitempty"`
+	CipherSuite    string `json:"cipher_suite,omitempty"`
+	IsTSPUDPIReset bool   `json:"is_tspu_dpi_reset"`
+	TLSError       string `json:"tls_error,omitempty"`
+	E2ESuccess     bool   `json:"e2e_success"`
+	E2ELatencyMs   int    `json:"e2e_latency_ms"`
+	E2EHTTPCode    int    `json:"e2e_http_code"`
+	E2ETarget      string `json:"e2e_target"`
+	E2EError       string `json:"e2e_error,omitempty"`
+	Status         string `json:"status"` // "clean" | "dpi_blocked" | "offline" | "degraded"
+	Summary        string `json:"summary"`
+	Timestamp      string `json:"timestamp"`
+}
+
 

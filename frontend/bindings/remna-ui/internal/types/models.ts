@@ -84,6 +84,41 @@ export class BackupInfo {
     }
 }
 
+export class CleanDiskResult {
+    "success": boolean;
+    "space_before": string;
+    "space_after": string;
+    "freed_space"?: string;
+    "output": string;
+    "error"?: string;
+
+    /** Creates a new CleanDiskResult instance. */
+    constructor($$source: Partial<CleanDiskResult> = {}) {
+        if (!("success" in $$source)) {
+            this["success"] = false;
+        }
+        if (!("space_before" in $$source)) {
+            this["space_before"] = "";
+        }
+        if (!("space_after" in $$source)) {
+            this["space_after"] = "";
+        }
+        if (!("output" in $$source)) {
+            this["output"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CleanDiskResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): CleanDiskResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new CleanDiskResult($$parsedSource as Partial<CleanDiskResult>);
+    }
+}
+
 export class CommandResult {
     "success": boolean;
     "output": string;
@@ -1089,6 +1124,7 @@ export class ServerMetrics {
     "disk_used": string;
     "disk_total": string;
     "disk_percent": number;
+    "cpu_steal": number;
 
     /** Creates a new ServerMetrics instance. */
     constructor($$source: Partial<ServerMetrics> = {}) {
@@ -1112,6 +1148,9 @@ export class ServerMetrics {
         }
         if (!("disk_percent" in $$source)) {
             this["disk_percent"] = 0;
+        }
+        if (!("cpu_steal" in $$source)) {
+            this["cpu_steal"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -1204,6 +1243,92 @@ export class ServerStatusResult {
             $$parsedSource["backups"] = $$createField11_0($$parsedSource["backups"]);
         }
         return new ServerStatusResult($$parsedSource as Partial<ServerStatusResult>);
+    }
+}
+
+export class VPNProbeResult {
+    "host": string;
+    "port": number;
+    "decoy_domain": string;
+    "tcp_connected": boolean;
+    "tcp_latency_ms": number;
+    "tcp_error"?: string;
+    "tls_handshake": boolean;
+    "tls_latency_ms": number;
+    "tls_version"?: string;
+    "cipher_suite"?: string;
+    "is_tspu_dpi_reset": boolean;
+    "tls_error"?: string;
+    "e2e_success": boolean;
+    "e2e_latency_ms": number;
+    "e2e_http_code": number;
+    "e2e_target": string;
+    "e2e_error"?: string;
+
+    /**
+     * "clean" | "dpi_blocked" | "offline" | "degraded"
+     */
+    "status": string;
+    "summary": string;
+    "timestamp": string;
+
+    /** Creates a new VPNProbeResult instance. */
+    constructor($$source: Partial<VPNProbeResult> = {}) {
+        if (!("host" in $$source)) {
+            this["host"] = "";
+        }
+        if (!("port" in $$source)) {
+            this["port"] = 0;
+        }
+        if (!("decoy_domain" in $$source)) {
+            this["decoy_domain"] = "";
+        }
+        if (!("tcp_connected" in $$source)) {
+            this["tcp_connected"] = false;
+        }
+        if (!("tcp_latency_ms" in $$source)) {
+            this["tcp_latency_ms"] = 0;
+        }
+        if (!("tls_handshake" in $$source)) {
+            this["tls_handshake"] = false;
+        }
+        if (!("tls_latency_ms" in $$source)) {
+            this["tls_latency_ms"] = 0;
+        }
+        if (!("is_tspu_dpi_reset" in $$source)) {
+            this["is_tspu_dpi_reset"] = false;
+        }
+        if (!("e2e_success" in $$source)) {
+            this["e2e_success"] = false;
+        }
+        if (!("e2e_latency_ms" in $$source)) {
+            this["e2e_latency_ms"] = 0;
+        }
+        if (!("e2e_http_code" in $$source)) {
+            this["e2e_http_code"] = 0;
+        }
+        if (!("e2e_target" in $$source)) {
+            this["e2e_target"] = "";
+        }
+        if (!("status" in $$source)) {
+            this["status"] = "";
+        }
+        if (!("summary" in $$source)) {
+            this["summary"] = "";
+        }
+        if (!("timestamp" in $$source)) {
+            this["timestamp"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new VPNProbeResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): VPNProbeResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new VPNProbeResult($$parsedSource as Partial<VPNProbeResult>);
     }
 }
 

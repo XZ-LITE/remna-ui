@@ -41,6 +41,23 @@ func (a *App) CheckIPBlock(host string, port int) types.IPBlockCheckResult {
 	return probe.CheckIPBlock(host, port)
 }
 
+func (a *App) ProbeVPNTraffic(host string, port int, decoyDomain string, customVless string, server types.SavedServer, sshPassword string) types.VPNProbeResult {
+	if server.Host != "" && sshPassword != "" {
+		server.Password = sshPassword
+	}
+	var runner probe.EgressRunner
+	if server.Host != "" {
+		runner = func() (bool, int, int, string) {
+			return admin.RunServerEgressProbe(server)
+		}
+	}
+	return probe.ProbeVPNNodeTraffic(host, port, decoyDomain, customVless, runner)
+}
+
+func (a *App) CleanServerDisk(server types.SavedServer, password string) types.CleanDiskResult {
+	return admin.CleanServerDisk(server, password)
+}
+
 func (a *App) TestSSH(host string, port int, user, password, keyPath string) types.SSHTestResult {
 	return ssh.TestConnection(host, port, user, password, keyPath)
 }

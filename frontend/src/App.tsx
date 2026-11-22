@@ -137,6 +137,8 @@ const {
   AttachNodeSecret,
   CheckDNS,
   CheckIPBlock,
+  ProbeVPNTraffic,
+  CleanServerDisk,
   TestSSH,
   GenerateConfig,
   StartDeployment,
@@ -198,6 +200,7 @@ import { RestoreBackupModal } from "./components/modals/RestoreBackupModal";
 import { AntiProbingAuditModal } from "./components/modals/AntiProbingAuditModal";
 
 import { IPBlockModal } from "./components/modals/IPBlockModal";
+import { VPNProbeModal } from "./components/modals/VPNProbeModal";
 
 import { SettingsCard } from "./components/ui/SettingsCard";
 
@@ -525,6 +528,16 @@ export function App() {
     result: types.IPBlockCheckResult | null;
     loading: boolean;
   } | null>(null);
+
+  // Standalone Server VPN Synthetic Probe Modal
+  const [vpnProbeModal, setVpnProbeModal] = useState<{
+    server: types.SavedServer;
+    result: types.VPNProbeResult | null;
+    loading: boolean;
+  } | null>(null);
+
+  // Clean Disk Loading State per Server
+  const [cleaningDiskServerId, setCleaningDiskServerId] = useState<string | null>(null);
 
 
 
@@ -1202,6 +1215,41 @@ export function App() {
     } catch (err: any) {
       addToast("error", `Ошибка повторной проверки IP: ${err}`);
       setIpCheckModal((prev) => (prev ? { ...prev, loading: false } : null));
+    }
+  };
+
+  // Open VPN Synthetic Probe Modal
+  const handleOpenVPNProbeModal = async (srv: types.SavedServer, customVless?: string) => {
+    setVpnProbeModal({ server: srv, result: null, loading: true });
+    try {
+      const port = srv.port || 443;
+      const res = await ProbeVPNTraffic(srv.host, port, srv.decoy_domain || "", customVless || "", srv, srv.password || "");
+      setVpnProbeModal({ server: srv, result: res, loading: false });
+    } catch (err: any) {
+      addToast("error", `Ошибка проверки VPN-трафика сервера ${srv.host}: ${err}`);
+      setVpnProbeModal((prev) => (prev ? { ...prev, loading: false } : null));
+    }
+  };
+
+  // Safe Smart Clean Disk for Server
+  const handleCleanServerDisk = async (srv: types.SavedServer) => {
+    if (!window.confirm(`Выполнить безопасную очистку диска на ${srv.label || srv.host}?\n\nБудут удалены неиспользуемые слои Docker (без удаления данных БД и томов), очищены кэши сборщика, усечены системные логи journalctl до 2 дней / 100 МБ и удалены временные файлы.`)) {
+      return;
+    }
+    setCleaningDiskServerId(srv.id);
+    addToast("info", `Запущена безопасная очистка диска на ${srv.label || srv.host}...`);
+    try {
+      const res = await CleanServerDisk(srv, srv.password || "");
+      if (res && res.success) {
+        addToast("success", `Диск сервера очищен! ${res.freed_space || "Операция завершена успешно."}`);
+        handleInspectServer(srv);
+      } else {
+        addToast("error", `Не удалось очистить диск: ${res?.error || res?.output || "Неизвестная ошибка"}`);
+      }
+    } catch (err: any) {
+      addToast("error", `Ошибка выполнения очистки: ${err}`);
+    } finally {
+      setCleaningDiskServerId(null);
     }
   };
 
@@ -6802,6 +6850,16 @@ export function App() {
                                           <span>{status.latency_ms} ms</span>
                                         </span>
                                       ) : null}
+                                      {status.metrics?.cpu_steal !== undefined && status.metrics.cpu_steal >= 5 && (
+                                        <span
+                                          className={`server-compact-pill ${status.metrics.cpu_steal >= 15 ? "services-warn" : ""}`}
+                                          title={`CPU Steal: ${status.metrics.cpu_steal.toFixed(1)}% (потеря тактов из-за оверселлинга хостера)`}
+                                          style={status.metrics.cpu_steal >= 15 ? { color: "#ef4444", borderColor: "#ef4444" } : { color: "#f59e0b" }}
+                                        >
+                                          <Activity size={10} />
+                                          <span>Steal {status.metrics.cpu_steal.toFixed(1)}%</span>
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -6986,6 +7044,29 @@ export function App() {
                                       >
                                         <ShieldAlert size={14} style={{ color: "#38bdf8" }} />
                                         <span>Проверить доступность из РФ</span>
+                                      </button>
+
+                                      <button
+                                        className="server-menu-item"
+                                        onClick={() => {
+                                          setActiveServerMenu(null);
+                                          handleOpenVPNProbeModal(srv);
+                                        }}
+                                      >
+                                        <Activity size={14} style={{ color: "#c084fc" }} />
+                                        <span>Тест VPN-трафика (E2E)</span>
+                                      </button>
+
+                                      <button
+                                        className="server-menu-item"
+                                        onClick={() => {
+                                          setActiveServerMenu(null);
+                                          handleCleanServerDisk(srv);
+                                        }}
+                                        disabled={cleaningDiskServerId === srv.id}
+                                      >
+                                        <Trash2 size={14} style={{ color: "#f87171" }} />
+                                        <span>{cleaningDiskServerId === srv.id ? "Очистка диска..." : "Очистить диск (Smart Clean)"}</span>
                                       </button>
 
                                       <button
@@ -7244,11 +7325,31 @@ export function App() {
 
                                   {/* Disk */}
                                   <div className="metric-card">
-                                    <div className="metric-header">
+                                    <div className="metric-header" style={{ justifyContent: "space-between" }}>
                                       <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                                         <HardDrive size={12} style={{ color: "#38bdf8" }} />
                                         <span>Диск (/)</span>
                                       </div>
+                                      <button
+                                        style={{
+                                          padding: "1px 6px",
+                                          fontSize: "10px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                          border: "1px solid var(--win-border-light)",
+                                          borderRadius: "4px",
+                                          background: "transparent",
+                                          color: "var(--win-text-secondary)",
+                                          cursor: "pointer",
+                                        }}
+                                        disabled={cleaningDiskServerId === srv.id}
+                                        onClick={() => handleCleanServerDisk(srv)}
+                                        title="Безопасная очистка Docker-слоев и логов journalctl"
+                                      >
+                                        <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
+                                        <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
+                                      </button>
                                     </div>
                                     <div className="metric-value">
                                       {status.metrics.disk_used} / {status.metrics.disk_total}
@@ -7287,7 +7388,7 @@ export function App() {
                                   <div className="metric-card">
                                     <div className="metric-header">
                                       <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                                        <Activity size={12} style={{ color: "#c084fc" }} />
+                                        <Layers size={12} style={{ color: "#c084fc" }} />
                                         <span>Службы стека</span>
                                       </div>
                                     </div>
@@ -7297,6 +7398,48 @@ export function App() {
                                     <div style={{ height: "5px" }} />
                                     <div className="metric-sub">
                                       {runningCount === totalCount ? "Все службы активны" : "Есть остановленные службы"}
+                                    </div>
+                                  </div>
+
+                                  {/* CPU Steal (VPS Overselling) */}
+                                  <div className="metric-card">
+                                    <div className="metric-header">
+                                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                                        <Activity
+                                          size={12}
+                                          style={{
+                                            color:
+                                              (status.metrics.cpu_steal || 0) >= 15
+                                                ? "#ef4444"
+                                                : (status.metrics.cpu_steal || 0) >= 5
+                                                ? "#f59e0b"
+                                                : "#22c55e",
+                                          }}
+                                        />
+                                        <span>CPU Steal (VPS)</span>
+                                      </div>
+                                    </div>
+                                    <div className="metric-value">
+                                      {status.metrics.cpu_steal !== undefined ? `${status.metrics.cpu_steal.toFixed(1)}%` : "0.0%"}
+                                    </div>
+                                    <div className="metric-bar-track">
+                                      <div
+                                        className={`metric-bar-fill ${
+                                          (status.metrics.cpu_steal || 0) >= 15
+                                            ? "danger"
+                                            : (status.metrics.cpu_steal || 0) >= 5
+                                            ? "warning"
+                                            : "normal"
+                                        }`}
+                                        style={{ width: `${Math.min((status.metrics.cpu_steal || 0) * 4, 100)}%` }}
+                                      />
+                                    </div>
+                                    <div className="metric-sub">
+                                      {(status.metrics.cpu_steal || 0) >= 15
+                                        ? "Критическая деградация VPS (хостер)"
+                                        : (status.metrics.cpu_steal || 0) >= 5
+                                        ? "Умеренная нагрузка от соседей"
+                                        : "Норма (шумные соседи отсутствуют)"}
                                     </div>
                                   </div>
                                 </div>
@@ -7862,11 +8005,31 @@ export function App() {
 
                                   {/* Disk */}
                                   <div className="metric-card">
-                                    <div className="metric-header">
+                                    <div className="metric-header" style={{ justifyContent: "space-between" }}>
                                       <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                                         <HardDrive size={12} style={{ color: "#38bdf8" }} />
                                         <span>Диск (/)</span>
                                       </div>
+                                      <button
+                                        style={{
+                                          padding: "1px 6px",
+                                          fontSize: "10px",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                          border: "1px solid var(--win-border-light)",
+                                          borderRadius: "4px",
+                                          background: "transparent",
+                                          color: "var(--win-text-secondary)",
+                                          cursor: "pointer",
+                                        }}
+                                        disabled={cleaningDiskServerId === srv.id}
+                                        onClick={() => handleCleanServerDisk(srv)}
+                                        title="Безопасная очистка Docker-слоев и логов journalctl"
+                                      >
+                                        <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
+                                        <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
+                                      </button>
                                     </div>
                                     <div className="metric-value">
                                       {status.metrics.disk_used} / {status.metrics.disk_total}
@@ -7909,6 +8072,48 @@ export function App() {
                                     <div style={{ height: "5px" }} />
                                     <div className="metric-sub">Время непрерывной работы</div>
                                   </div>
+
+                                  {/* CPU Steal (VPS Overselling) */}
+                                  <div className="metric-card">
+                                    <div className="metric-header">
+                                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                                        <Activity
+                                          size={12}
+                                          style={{
+                                            color:
+                                              (status.metrics.cpu_steal || 0) >= 15
+                                                ? "#ef4444"
+                                                : (status.metrics.cpu_steal || 0) >= 5
+                                                ? "#f59e0b"
+                                                : "#22c55e",
+                                          }}
+                                        />
+                                        <span>CPU Steal (VPS)</span>
+                                      </div>
+                                    </div>
+                                    <div className="metric-value">
+                                      {status.metrics.cpu_steal !== undefined ? `${status.metrics.cpu_steal.toFixed(1)}%` : "0.0%"}
+                                    </div>
+                                    <div className="metric-bar-track">
+                                      <div
+                                        className={`metric-bar-fill ${
+                                          (status.metrics.cpu_steal || 0) >= 15
+                                            ? "danger"
+                                            : (status.metrics.cpu_steal || 0) >= 5
+                                            ? "warning"
+                                            : "normal"
+                                        }`}
+                                        style={{ width: `${Math.min((status.metrics.cpu_steal || 0) * 4, 100)}%` }}
+                                      />
+                                    </div>
+                                    <div className="metric-sub">
+                                      {(status.metrics.cpu_steal || 0) >= 15
+                                        ? "Критическая деградация VPS (хостер)"
+                                        : (status.metrics.cpu_steal || 0) >= 5
+                                        ? "Умеренная нагрузка от соседей"
+                                        : "Норма (шумные соседи отсутствуют)"}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -7945,14 +8150,25 @@ export function App() {
                                     </div>
                                   </div>
                                 </div>
-                                <button
-                                  className="win-button hero-primary"
-                                  style={{ height: "34px", fontSize: "12.5px" }}
-                                  onClick={() => handleOpenAudit(srv)}
-                                >
-                                  <ShieldCheck size={14} />
-                                  <span>Запустить аудит ТСПУ</span>
-                                </button>
+                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                  <button
+                                    className="win-button"
+                                    style={{ height: "34px", fontSize: "12.5px" }}
+                                    onClick={() => handleOpenVPNProbeModal(srv)}
+                                    title="Синтетическая проверка реального VPN-трафика и детекция блокировок ТСПУ"
+                                  >
+                                    <Activity size={14} style={{ color: "#c084fc" }} />
+                                    <span>Тест VPN-трафика</span>
+                                  </button>
+                                  <button
+                                    className="win-button hero-primary"
+                                    style={{ height: "34px", fontSize: "12.5px" }}
+                                    onClick={() => handleOpenAudit(srv)}
+                                  >
+                                    <ShieldCheck size={14} />
+                                    <span>Запустить аудит ТСПУ</span>
+                                  </button>
+                                </div>
                               </div>
 
                               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "14px" }}>
@@ -8691,6 +8907,17 @@ export function App() {
           loading={ipCheckModal.loading}
           onClose={() => setIpCheckModal(null)}
           onRefresh={handleRefreshIPCheckModal}
+        />
+      )}
+
+      {/* Modal: Synthetic VPN Traffic & TSPU Probe */}
+      {vpnProbeModal && (
+        <VPNProbeModal
+          server={vpnProbeModal.server}
+          result={vpnProbeModal.result}
+          loading={vpnProbeModal.loading}
+          onClose={() => setVpnProbeModal(null)}
+          onRefresh={(customVless) => handleOpenVPNProbeModal(vpnProbeModal.server, customVless)}
         />
       )}
 
