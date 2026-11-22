@@ -1305,7 +1305,10 @@ export function App() {
   const loadPanelEntities = async (url: string, token: string) => {
     const cleanUrl = url.trim();
     const cleanToken = token.trim();
-    if (!cleanUrl || !cleanToken) return;
+    if (!cleanUrl || !cleanToken) {
+      addToast("warning", "Сначала укажите URL панели и API токен выше.");
+      return;
+    }
     setLoadingPanelEntities(true);
     try {
       const [profiles, squads] = await Promise.all([
@@ -1322,7 +1325,7 @@ export function App() {
         setPanelSquads(squads);
         if (squads.length > 0) {
           setSelectedSquadUuid((prev) => {
-            if (prev && prev !== "default") return prev;
+            if (prev && prev !== "default" && prev !== "none") return prev;
             const def = squads.find(
               (s) =>
                 s.name.toLowerCase().includes("default") ||
@@ -1332,8 +1335,14 @@ export function App() {
           });
         }
       }
-    } catch (err) {
+      if ((profiles && profiles.length > 0) || (squads && squads.length > 0)) {
+        addToast("success", `Загружено: профилей (${profiles?.length || 0}), сквадов (${squads?.length || 0})`);
+      } else {
+        addToast("info", "В панели пока нет сохраненных профилей или сквадов.");
+      }
+    } catch (err: any) {
       console.warn("Не удалось загрузить профили/сквады панели:", err);
+      addToast("error", `Ошибка загрузки данных панели: ${err?.message || err}`);
     } finally {
       setLoadingPanelEntities(false);
     }
@@ -1484,10 +1493,20 @@ export function App() {
       try {
         let cfgProfUuid = "";
         let inbUuid = "";
-        if (nodeIntegrationMode === "custom" && selectedProfileInbound) {
+        let inbPort = 443;
+        if (nodeIntegrationMode === "custom") {
+          if (!selectedProfileInbound) {
+            addToast("error", "Выберите профиль конфигурации и входящий порт (Inbound) перед продолжением.");
+            setIsDeploying(false);
+            return;
+          }
           const parts = selectedProfileInbound.split(":");
           cfgProfUuid = parts[0] || "";
           inbUuid = parts[1] || "";
+          const foundProf = panelProfiles.find((p) => p.uuid === cfgProfUuid && p.inbound_uuid === inbUuid);
+          if (foundProf && foundProf.port > 0) {
+            inbPort = foundProf.port;
+          }
         }
 
         const createRes = await CreateNodeInPanel(
@@ -1506,7 +1525,8 @@ export function App() {
             integration_mode: nodeIntegrationMode,
             config_profile_uuid: cfgProfUuid,
             inbound_uuid: inbUuid,
-            squad_uuid: selectedSquadUuid,
+            inbound_port: inbPort,
+            squad_uuid: selectedSquadUuid || "none",
             create_host: createSubscriptionHost,
             host_address: customHostAddress.trim() || (deployDecoy && nodeDecoyDomain ? nodeDecoyDomain.trim() : sshHost.trim()),
           })
@@ -3947,7 +3967,9 @@ export function App() {
                                       }}
                                       onClick={() => {
                                         setNodeIntegrationMode("custom");
-                                        if (panelProfiles.length === 0 && nodePanelUrl && nodeApiToken) {
+                                        if (!nodePanelUrl.trim() || !nodeApiToken.trim()) {
+                                          addToast("warning", "Укажите URL панели и API токен выше, чтобы загрузить профили и сквады.");
+                                        } else if (panelProfiles.length === 0) {
                                           loadPanelEntities(nodePanelUrl.trim(), nodeApiToken.trim());
                                         }
                                       }}
@@ -4039,15 +4061,18 @@ export function App() {
                                           ))}
                                         </select>
                                       ) : (
-                                        <select
-                                          className="win-select"
-                                          style={{ minWidth: "260px" }}
-                                          value={selectedSquadUuid}
-                                          onChange={(e) => setSelectedSquadUuid(e.target.value)}
-                                        >
-                                          <option value="default">Default-Squad (дефолтный сквад)</option>
-                                          <option value="none">Не добавлять в сквад</option>
-                                        </select>
+                                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                          <span style={{ fontSize: "12px", color: "var(--win-text-tertiary)" }}>Не загружены</span>
+                                          <select
+                                            className="win-select"
+                                            style={{ minWidth: "220px" }}
+                                            value={selectedSquadUuid}
+                                            onChange={(e) => setSelectedSquadUuid(e.target.value)}
+                                          >
+                                            <option value="default">Авто-привязка к Default-Squad</option>
+                                            <option value="none">Не добавлять в сквад</option>
+                                          </select>
+                                        </div>
                                       )
                                     }
                                   />

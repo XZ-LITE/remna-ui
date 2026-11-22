@@ -179,6 +179,7 @@ type CreateNodeRequest struct {
 	IntegrationMode   string  `json:"integration_mode"` // "turnkey" or "custom"
 	ConfigProfileUUID string  `json:"config_profile_uuid"`
 	InboundUUID       string  `json:"inbound_uuid"`
+	InboundPort       int     `json:"inbound_port"`
 	SquadUUID         string  `json:"squad_uuid"`
 	CreateHost        bool    `json:"create_host"`
 	HostAddress       string  `json:"host_address"`

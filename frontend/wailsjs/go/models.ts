@@ -93,6 +93,7 @@ export namespace types {
 	    integration_mode: string;
 	    config_profile_uuid: string;
 	    inbound_uuid: string;
+	    inbound_port: number;
 	    squad_uuid: string;
 	    create_host: boolean;
 	    host_address: string;
@@ -116,6 +117,7 @@ export namespace types {
 	        this.integration_mode = source["integration_mode"];
 	        this.config_profile_uuid = source["config_profile_uuid"];
 	        this.inbound_uuid = source["inbound_uuid"];
+	        this.inbound_port = source["inbound_port"];
 	        this.squad_uuid = source["squad_uuid"];
 	        this.create_host = source["create_host"];
 	        this.host_address = source["host_address"];

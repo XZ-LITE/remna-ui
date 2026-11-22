@@ -729,7 +729,11 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 
 	if shouldCreateHost && len(inbounds) > 0 && hostAddr != "" && profileUUID != "" {
 		primaryInbound := inbounds[0]
-		errH := CreateHostInPanel(targetURL, cleanToken, profileUUID, primaryInbound, hostAddr, remark, hostSNI, 443)
+		hostPort := 443
+		if req.InboundPort > 0 {
+			hostPort = req.InboundPort
+		}
+		errH := CreateHostInPanel(targetURL, cleanToken, profileUUID, primaryInbound, hostAddr, remark, hostSNI, hostPort)
 		if errH == nil {
 			hostCreated = true
 		}
@@ -739,7 +743,7 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 	if len(inbounds) > 0 {
 		primaryInbound := inbounds[0]
 		if req.IntegrationMode == "custom" {
-			if req.SquadUUID != "" {
+			if req.SquadUUID != "" && !strings.EqualFold(req.SquadUUID, "none") {
 				errSq := AddInboundToSquad(targetURL, cleanToken, req.SquadUUID, primaryInbound)
 				if errSq == nil {
 					squadUpdated = true
@@ -747,19 +751,9 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 			}
 		} else {
 			// Turnkey: automatically add to default squad
-			squads, _ := GetInternalSquads(targetURL, cleanToken)
-			if len(squads) > 0 {
-				targetSquadUUID := squads[0].UUID
-				for _, sq := range squads {
-					if strings.Contains(strings.ToLower(sq.Name), "default") {
-						targetSquadUUID = sq.UUID
-						break
-					}
-				}
-				errSq := AddInboundToSquad(targetURL, cleanToken, targetSquadUUID, primaryInbound)
-				if errSq == nil {
-					squadUpdated = true
-				}
+			errSq := AddInboundToSquad(targetURL, cleanToken, "default", primaryInbound)
+			if errSq == nil {
+				squadUpdated = true
 			}
 		}
 	}
@@ -789,6 +783,10 @@ func CreateHostInPanel(panelURL, apiToken, profileUUID, inboundUUID, hostAddress
 	if len(remark) > 30 {
 		remark = remark[:30]
 	}
+	cleanSNI := strings.TrimSpace(sni)
+	if cleanSNI == "" {
+		cleanSNI = hostAddress
+	}
 
 	client := getHTTPClient()
 
@@ -798,12 +796,15 @@ func CreateHostInPanel(panelURL, apiToken, profileUUID, inboundUUID, hostAddress
 			"configProfileUuid":        profileUUID,
 			"configProfileInboundUuid": inboundUUID,
 		},
-		"remark":  remark,
-		"address": hostAddress,
-		"port":    port,
-	}
-	if sni != "" {
-		hostPayload["sni"] = sni
+		"remark":        remark,
+		"address":       hostAddress,
+		"port":          port,
+		"path":          "",
+		"sni":           cleanSNI,
+		"host":          "",
+		"fingerprint":   "firefox",
+		"isDisabled":    false,
+		"securityLayer": "DEFAULT",
 	}
 
 	hBytes, _ := json.Marshal(hostPayload)
@@ -828,9 +829,7 @@ func CreateHostInPanel(panelURL, apiToken, profileUUID, inboundUUID, hostAddress
 			"remark":      remark,
 			"address":     hostAddress,
 			"port":        port,
-		}
-		if sni != "" {
-			fbPayload["sni"] = sni
+			"sni":         cleanSNI,
 		}
 		fbBytes, _ := json.Marshal(fbPayload)
 		fbReq, _ := http.NewRequest("POST", targetURL+"/api/hosts", bytes.NewBuffer(fbBytes))
@@ -856,18 +855,43 @@ func CreateHostInPanel(panelURL, apiToken, profileUUID, inboundUUID, hostAddress
 func AddInboundToSquad(panelURL, apiToken, squadUUID, inboundUUID string) error {
 	targetURL := cleanURL(panelURL)
 	cleanToken := strings.TrimSpace(apiToken)
-	if targetURL == "" || cleanToken == "" || squadUUID == "" || inboundUUID == "" {
+	if targetURL == "" || cleanToken == "" || inboundUUID == "" {
 		return fmt.Errorf("недостаточно параметров для привязки к скваду")
+	}
+
+	cleanSquadUUID := strings.TrimSpace(squadUUID)
+	if cleanSquadUUID == "" || strings.EqualFold(cleanSquadUUID, "none") {
+		return nil
 	}
 
 	client := getHTTPClient()
 
-	// 1. Fetch current inbounds of the squad
+	// 1. Fetch current squads to resolve "default" or verify existence and retrieve inbounds
 	squads, err := GetInternalSquads(panelURL, apiToken)
+	if err != nil && strings.EqualFold(cleanSquadUUID, "default") {
+		return fmt.Errorf("не удалось получить сквады из панели: %v", err)
+	}
+
+	targetSquadUUID := cleanSquadUUID
 	var currentInbounds []string
-	if err == nil {
+
+	if strings.EqualFold(cleanSquadUUID, "default") {
+		if len(squads) == 0 {
+			return fmt.Errorf("в панели не найдены внутренние сквады")
+		}
+		targetSquadUUID = squads[0].UUID
+		currentInbounds = squads[0].InboundUUIDs
+		for _, sq := range squads {
+			nameLower := strings.ToLower(sq.Name)
+			if strings.Contains(nameLower, "default") || strings.Contains(nameLower, "дефолт") {
+				targetSquadUUID = sq.UUID
+				currentInbounds = sq.InboundUUIDs
+				break
+			}
+		}
+	} else {
 		for _, s := range squads {
-			if s.UUID == squadUUID {
+			if s.UUID == cleanSquadUUID {
 				currentInbounds = s.InboundUUIDs
 				break
 			}
@@ -886,48 +910,65 @@ func AddInboundToSquad(panelURL, apiToken, squadUUID, inboundUUID string) error 
 		currentInbounds = append(currentInbounds, inboundUUID)
 	}
 
-	// 3. Send PATCH /api/internal-squads/{squadUUID}
-	patchPayload := map[string]any{
+	// 3. Primary attempt: Remnawave v2/v3 endpoint PATCH /api/internal-squads with body { uuid, inbounds }
+	patchBodyPrimary := map[string]any{
+		"uuid":     targetSquadUUID,
 		"inbounds": currentInbounds,
 	}
-	pBytes, _ := json.Marshal(patchPayload)
-	pReq, err := http.NewRequest("PATCH", fmt.Sprintf("%s/api/internal-squads/%s", targetURL, squadUUID), bytes.NewBuffer(pBytes))
-	if err != nil {
-		return err
-	}
-	pReq.Header.Set("Authorization", "Bearer "+cleanToken)
-	pReq.Header.Set("Content-Type", "application/json")
-	pReq.Header.Set("Accept", "application/json")
-
-	pResp, errP := client.Do(pReq)
-	if errP != nil {
-		return errP
-	}
-	defer pResp.Body.Close()
-
-	if pResp.StatusCode >= 400 {
-		// Fallback: Some Remnawave API versions use inboundUuids
-		fbPayload := map[string]any{
-			"inboundUuids": currentInbounds,
-		}
-		fbBytes, _ := json.Marshal(fbPayload)
-		fbReq, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/api/internal-squads/%s", targetURL, squadUUID), bytes.NewBuffer(fbBytes))
-		if fbReq != nil {
-			fbReq.Header.Set("Authorization", "Bearer "+cleanToken)
-			fbReq.Header.Set("Content-Type", "application/json")
-			fbReq.Header.Set("Accept", "application/json")
-			fbResp, errFb := client.Do(fbReq)
-			if errFb == nil {
-				defer fbResp.Body.Close()
-				if fbResp.StatusCode < 400 {
-					return nil
-				}
+	pBytes1, _ := json.Marshal(patchBodyPrimary)
+	pReq1, err := http.NewRequest("PATCH", targetURL+"/api/internal-squads", bytes.NewBuffer(pBytes1))
+	if err == nil {
+		pReq1.Header.Set("Authorization", "Bearer "+cleanToken)
+		pReq1.Header.Set("Content-Type", "application/json")
+		pReq1.Header.Set("Accept", "application/json")
+		pResp1, errDo1 := client.Do(pReq1)
+		if errDo1 == nil {
+			defer pResp1.Body.Close()
+			if pResp1.StatusCode >= 200 && pResp1.StatusCode < 300 {
+				return nil
 			}
 		}
-		return fmt.Errorf("status %d", pResp.StatusCode)
 	}
 
-	return nil
+	// Fallback 1: PATCH /api/internal-squads/{targetSquadUUID} with { inbounds: [...] }
+	patchBodyFB1 := map[string]any{
+		"inbounds": currentInbounds,
+	}
+	pBytes2, _ := json.Marshal(patchBodyFB1)
+	pReq2, err := http.NewRequest("PATCH", fmt.Sprintf("%s/api/internal-squads/%s", targetURL, targetSquadUUID), bytes.NewBuffer(pBytes2))
+	if err == nil {
+		pReq2.Header.Set("Authorization", "Bearer "+cleanToken)
+		pReq2.Header.Set("Content-Type", "application/json")
+		pReq2.Header.Set("Accept", "application/json")
+		pResp2, errDo2 := client.Do(pReq2)
+		if errDo2 == nil {
+			defer pResp2.Body.Close()
+			if pResp2.StatusCode >= 200 && pResp2.StatusCode < 300 {
+				return nil
+			}
+		}
+	}
+
+	// Fallback 2: PATCH /api/internal-squads/{targetSquadUUID} with { inboundUuids: [...] }
+	patchBodyFB2 := map[string]any{
+		"inboundUuids": currentInbounds,
+	}
+	pBytes3, _ := json.Marshal(patchBodyFB2)
+	pReq3, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/api/internal-squads/%s", targetURL, targetSquadUUID), bytes.NewBuffer(pBytes3))
+	if pReq3 != nil {
+		pReq3.Header.Set("Authorization", "Bearer "+cleanToken)
+		pReq3.Header.Set("Content-Type", "application/json")
+		pReq3.Header.Set("Accept", "application/json")
+		pResp3, errDo3 := client.Do(pReq3)
+		if errDo3 == nil {
+			defer pResp3.Body.Close()
+			if pResp3.StatusCode >= 200 && pResp3.StatusCode < 300 {
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("не удалось привязать инбаунд к скваду %s через API", targetSquadUUID)
 }
 
 // GetConfigProfiles retrieves all config profiles and their inbounds from the panel
@@ -1048,7 +1089,27 @@ func GetInternalSquads(panelURL, apiToken string) ([]types.PanelSquadItem, error
 	if err := json.Unmarshal(body, &rawList); err != nil {
 		var wrapper map[string]any
 		if err := json.Unmarshal(body, &wrapper); err == nil {
-			if l, ok := wrapper["response"].([]any); ok {
+			if respMap, ok := wrapper["response"].(map[string]any); ok {
+				if l, ok := respMap["internalSquads"].([]any); ok {
+					for _, item := range l {
+						if m, ok := item.(map[string]any); ok {
+							rawList = append(rawList, m)
+						}
+					}
+				} else if l, ok := respMap["squads"].([]any); ok {
+					for _, item := range l {
+						if m, ok := item.(map[string]any); ok {
+							rawList = append(rawList, m)
+						}
+					}
+				}
+			} else if l, ok := wrapper["response"].([]any); ok {
+				for _, item := range l {
+					if m, ok := item.(map[string]any); ok {
+						rawList = append(rawList, m)
+					}
+				}
+			} else if l, ok := wrapper["internalSquads"].([]any); ok {
 				for _, item := range l {
 					if m, ok := item.(map[string]any); ok {
 						rawList = append(rawList, m)
@@ -1124,6 +1185,14 @@ func GetNodes(panelURL, apiToken string) ([]types.PanelNodeItem, error) {
 				for _, item := range l {
 					if m, ok := item.(map[string]any); ok {
 						rawList = append(rawList, m)
+					}
+				}
+			} else if respMap, ok := wrapper["response"].(map[string]any); ok {
+				if l, ok := respMap["nodes"].([]any); ok {
+					for _, item := range l {
+						if m, ok := item.(map[string]any); ok {
+							rawList = append(rawList, m)
+						}
 					}
 				}
 			}

@@ -423,7 +423,7 @@ func TestCreateNodeInPanel_CustomMode(t *testing.T) {
 			return
 		}
 
-		if (r.Method == http.MethodPatch || r.Method == http.MethodPut) && r.URL.Path == "/api/internal-squads/my-vip-squad-uuid" {
+		if (r.Method == http.MethodPatch || r.Method == http.MethodPut) && (r.URL.Path == "/api/internal-squads" || r.URL.Path == "/api/internal-squads/my-vip-squad-uuid") {
 			squadUpdated = true
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"success":true}`))
@@ -558,5 +558,168 @@ func TestCreateNodeInPanel_DeletesAllDuplicates(t *testing.T) {
 	}
 	if deletedUUIDs["node-other"] {
 		t.Errorf("node-other should NOT be deleted")
+	}
+}
+
+func TestGetInternalSquads_NestedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/internal-squads" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"response": {
+					"internalSquads": [
+						{
+							"uuid": "squad-1-uuid",
+							"name": "Default-Squad",
+							"inbounds": [
+								{"uuid": "inb-1-uuid"},
+								{"uuid": "inb-2-uuid"}
+							]
+						},
+						{
+							"uuid": "squad-2-uuid",
+							"name": "VIP-Users",
+							"inbounds": ["inb-3-uuid"]
+						}
+					]
+				}
+			}`))
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	squads, err := GetInternalSquads(server.URL, "token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(squads) != 2 {
+		t.Fatalf("expected 2 squads, got %d", len(squads))
+	}
+	if squads[0].UUID != "squad-1-uuid" || squads[0].Name != "Default-Squad" || squads[0].InboundsCount != 2 {
+		t.Errorf("unexpected squad[0]: %+v", squads[0])
+	}
+	if squads[1].UUID != "squad-2-uuid" || squads[1].Name != "VIP-Users" || squads[1].InboundsCount != 1 {
+		t.Errorf("unexpected squad[1]: %+v", squads[1])
+	}
+}
+
+func TestAddInboundToSquad_AutoDefaultAndPayload(t *testing.T) {
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/internal-squads" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"response": {
+					"internalSquads": [
+						{
+							"uuid": "resolved-default-uuid",
+							"name": "Default-Squad",
+							"inbounds": [{"uuid": "existing-inb"}]
+						}
+					]
+				}
+			}`))
+			return
+		}
+		if r.Method == http.MethodPatch && r.URL.Path == "/api/internal-squads" {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"success":true}`))
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	err := AddInboundToSquad(server.URL, "token", "default", "new-inb-uuid")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if receivedBody["uuid"] != "resolved-default-uuid" {
+		t.Errorf("expected squad uuid resolved-default-uuid, got %v", receivedBody["uuid"])
+	}
+	inbounds, ok := receivedBody["inbounds"].([]any)
+	if !ok || len(inbounds) != 2 {
+		t.Errorf("expected 2 inbounds in patch, got %v", receivedBody["inbounds"])
+	}
+}
+
+func TestAddInboundToSquad_NoneSkipped(t *testing.T) {
+	called := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	err := AddInboundToSquad(server.URL, "token", "none", "inb-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Errorf("expected no network call when squad is 'none'")
+	}
+}
+
+func TestCreateNodeInPanel_CustomInboundPort(t *testing.T) {
+	var hostPort int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/nodes" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`[]`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/nodes" {
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"response":{"uuid":"node-custom-port-uuid","secretKey":"SEC_8443"}}`))
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/hosts" {
+			var hBody map[string]any
+			json.NewDecoder(r.Body).Decode(&hBody)
+			if p, ok := hBody["port"].(float64); ok {
+				hostPort = int(p)
+			}
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"success":true}`))
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/internal-squads" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"response":{"internalSquads":[]}}`))
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	req := types.CreateNodeRequest{
+		Name:              "Custom Port Node",
+		Country:           "FI",
+		Address:           "95.217.1.1",
+		Port:              2222,
+		IntegrationMode:   "custom",
+		ConfigProfileUUID: "prof-custom-uuid",
+		InboundUUID:       "inb-custom-uuid",
+		InboundPort:       8443,
+		SquadUUID:         "none",
+		CreateHost:        true,
+		HostAddress:       "custom-fi.example.com",
+	}
+
+	resp := CreateNodeInPanel(server.URL, "token", req)
+	if !resp.Success {
+		t.Fatalf("expected success, got error: %s", resp.Error)
+	}
+	if !resp.HostCreated {
+		t.Errorf("expected host to be created")
+	}
+	if hostPort != 8443 {
+		t.Errorf("expected host port 8443, got %d", hostPort)
 	}
 }

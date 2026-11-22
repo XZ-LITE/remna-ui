@@ -199,6 +199,7 @@ export class CreateNodeRequest {
     "integration_mode": string;
     "config_profile_uuid": string;
     "inbound_uuid": string;
+    "inbound_port": number;
     "squad_uuid": string;
     "create_host": boolean;
     "host_address": string;
@@ -241,6 +242,9 @@ export class CreateNodeRequest {
         }
         if (!("inbound_uuid" in $$source)) {
             this["inbound_uuid"] = "";
+        }
+        if (!("inbound_port" in $$source)) {
+            this["inbound_port"] = 0;
         }
         if (!("squad_uuid" in $$source)) {
             this["squad_uuid"] = "";
