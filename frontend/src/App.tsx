@@ -286,11 +286,6 @@ export function App() {
   const [step, setStep] = useState<number>(1);
   const [stepDirection, setStepDirection] = useState<"forward" | "backward">("forward");
 
-  const changeStep = (target: number) => {
-    setStepDirection(target >= step ? "forward" : "backward");
-    setStep(target);
-  };
-
   const [theme, setTheme] = useState<"dark" | "light">(() => {
 
     return (localStorage.getItem("remna_theme") as "dark" | "light") || "dark";
@@ -618,6 +613,112 @@ export function App() {
     const arr = res.split("").sort(() => 0.5 - Math.random());
     setAdminPassword(arr.join(""));
   }, []);
+
+  const validateStep = (currentStep: number): boolean => {
+    if (currentStep === 1) {
+      if (components.length === 0) {
+        addToast("error", "Выберите хотя бы один компонент для развертывания.");
+        return false;
+      }
+      return true;
+    }
+    if (currentStep === 2) {
+      if (preset === "node-only") {
+        if (!nodeName.trim()) {
+          addToast("error", "Укажите имя ноды.");
+          return false;
+        }
+        if (nodeLinkMode === "auto") {
+          if (!nodePanelUrl.trim() || !nodeApiToken.trim()) {
+            addToast("error", "Для автоматической привязки ноды укажите URL панели и API токен.");
+            return false;
+          }
+          if (nodeIntegrationMode === "custom" && !selectedProfileInbound) {
+            addToast("error", "Выберите профиль конфигурации и входящий порт (Inbound) для кастомной привязки ноды.");
+            return false;
+          }
+        } else {
+          if (!nodeSecret.trim()) {
+            addToast("error", "Укажите секретный ключ связи ноды с панелью (NODE_SECRET).");
+            return false;
+          }
+        }
+        if (deployDecoy && !nodeDecoyDomain.trim()) {
+          addToast("error", "Укажите домен маскировочного сайта для SelfSteal Decoy или отключите опцию.");
+          return false;
+        }
+        if (deployDecoy && decoyTemplate === "clone" && !decoyCloneUrl.trim()) {
+          addToast("error", "Укажите URL сайта для клонирования маскировочного сайта.");
+          return false;
+        }
+        if (!nodePort || nodePort < 1 || nodePort > 65535) {
+          addToast("error", "Порт связи с панелью должен быть в диапазоне от 1 до 65535 (по умолчанию 2222).");
+          return false;
+        }
+        if ([22, 80, 443].includes(nodePort)) {
+          addToast("error", `Порт ${nodePort} зарезервирован для системных служб (SSH/HTTP/HTTPS). Выберите другой порт связи.`);
+          return false;
+        }
+        return true;
+      } else {
+        const cleanDomain = panelDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+        if (!cleanDomain) {
+          addToast("error", "Укажите домен панели управления (например: panel.domain.com).");
+          return false;
+        }
+        if (useSubDomain) {
+          const cleanSub = subDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+          if (!cleanSub) {
+            addToast("error", "Укажите отдельный домен для страницы подписок.");
+            return false;
+          }
+          if (cleanSub.toLowerCase() === cleanDomain.toLowerCase()) {
+            addToast("error", "Домен страницы подписок должен отличаться от домена панели управления.");
+            return false;
+          }
+        }
+        if (useCloudflareDns && !cloudflareToken.trim()) {
+          addToast("error", "Включен выпуск SSL через Cloudflare DNS, но не указан Cloudflare API токен.");
+          return false;
+        }
+        if (useGate) {
+          const cleanGate = secretGate.trim().replace(/^\/+/, "");
+          if (!cleanGate) {
+            addToast("error", "Укажите путь секретного гейта (например: admin_gate).");
+            return false;
+          }
+          if (!/^[a-zA-Z0-9_\-]+$/.test(cleanGate)) {
+            addToast("error", "Секретный гейт может содержать только латинские буквы, цифры, дефис и подчеркивание.");
+            return false;
+          }
+        }
+        if (components.includes("panel") && adminCreationMode === "custom") {
+          if (!adminUsername.trim()) {
+            addToast("error", "Укажите логин суперадминистратора.");
+            return false;
+          }
+          if (adminPassword.length < 24 || !/[A-Z]/.test(adminPassword) || !/[a-z]/.test(adminPassword) || !/[0-9]/.test(adminPassword)) {
+            addToast("error", "Пароль суперадминистратора должен содержать минимум 24 символа, включая заглавную букву, строчную букву и цифру (политика безопасности Remnawave).");
+            return false;
+          }
+        }
+        return true;
+      }
+    }
+    return true;
+  };
+
+  const changeStep = (target: number) => {
+    if (target > step) {
+      for (let s = step; s < target; s++) {
+        if (!validateStep(s)) {
+          return;
+        }
+      }
+    }
+    setStepDirection(target >= step ? "forward" : "backward");
+    setStep(target);
+  };
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -959,25 +1060,16 @@ export function App() {
 
 
   // Preset Selection Handler
-
   const handleSelectPreset = (id: string) => {
-
     setPreset(id);
-
     if (id === "all-in-one") {
-
       setComponents(["panel", "node", "proxy", "subscription"]);
-
+      setPortMode("stealth443");
     } else if (id === "panel-only") {
-
       setComponents(["panel", "proxy", "subscription"]);
-
     } else if (id === "node-only") {
-
       setComponents(["node"]);
-
     }
-
   };
 
 
@@ -1447,47 +1539,56 @@ export function App() {
 
 
   // Start Deployment
-
   const handleStart = async () => {
-
-    let finalSecret = nodeSecret.trim();
-
-
-
-    if (preset === "node-only") {
-
-      if (deployDecoy && !nodeDecoyDomain.trim()) {
-
-        addToast("error", "Укажите домен маскировочного сайта для SelfSteal Decoy или отключите опцию для режима Classic Reality.");
-
-        return;
-
-      }
-
+    if (components.length === 0) {
+      addToast("error", "Выберите хотя бы один компонент для развертывания.");
+      return;
     }
 
+    if (deployMode === "remote") {
+      if (!sshHost.trim()) {
+        addToast("error", "Укажите IP-адрес или хост удаленного VPS сервера.");
+        return;
+      }
+      if (!sshPass && !sshKey) {
+        addToast("error", "Укажите пароль root или выберите приватный SSH-ключ для подключения к серверу.");
+        return;
+      }
+    }
 
+    let finalSecret = nodeSecret.trim();
+    const cleanDecoyDomain = nodeDecoyDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    const cleanHostAddress = customHostAddress.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+
+    if (preset === "node-only") {
+      if (deployDecoy && !cleanDecoyDomain) {
+        addToast("error", "Укажите домен маскировочного сайта для SelfSteal Decoy или отключите опцию для режима Classic Reality.");
+        return;
+      }
+      if (deployDecoy && decoyTemplate === "clone" && !decoyCloneUrl.trim()) {
+        addToast("error", "Укажите URL сайта для клонирования маскировочного сайта.");
+        return;
+      }
+      if (!nodePort || nodePort < 1 || nodePort > 65535) {
+        addToast("error", "Порт связи с панелью должен быть в диапазоне от 1 до 65535 (по умолчанию 2222).");
+        return;
+      }
+      if ([22, 80, 443].includes(nodePort)) {
+        addToast("error", `Порт ${nodePort} зарезервирован для системных служб. Выберите другой порт связи.`);
+        return;
+      }
+    }
 
     if (preset === "node-only" && nodeLinkMode === "auto") {
-
       if (!nodePanelUrl.trim() || !nodeApiToken.trim()) {
-
         addToast("error", "Для авто-привязки ноды укажите URL панели и API токен");
-
         return;
-
       }
-
       setLogs([
-
         { status: "step", message: "1. Подключение к API мастер-панели Remnawave..." },
-
         { status: "info", message: `Панель: ${nodePanelUrl.trim()}` },
-
       ]);
-
       setIsDeploying(true);
-
       setDeployFinished(false);
 
       try {
@@ -1518,7 +1619,7 @@ export function App() {
             address: sshHost.trim(),
             port: nodePort,
             traffic_multiplier: 1.0,
-            decoy_domain: deployDecoy ? nodeDecoyDomain.trim() : "",
+            decoy_domain: deployDecoy ? cleanDecoyDomain : "",
             port_mode: portMode,
             torrent_blocker: torrentBlocker,
             block_spam_ports: blockSpamPorts,
@@ -1528,7 +1629,7 @@ export function App() {
             inbound_port: inbPort,
             squad_uuid: selectedSquadUuid || "none",
             create_host: createSubscriptionHost,
-            host_address: customHostAddress.trim() || (deployDecoy && nodeDecoyDomain ? nodeDecoyDomain.trim() : sshHost.trim()),
+            host_address: cleanHostAddress || (deployDecoy && cleanDecoyDomain ? cleanDecoyDomain : sshHost.trim()),
           })
         );
         if (!createRes.success) {
@@ -1554,32 +1655,33 @@ export function App() {
         ]);
 
       } catch (err: any) {
-
         setIsDeploying(false);
-
         setLogs((prev) => [
-
           ...prev,
-
           { status: "error", message: `Сбой регистрации ноды в API: ${err.message || err}` },
-
         ]);
-
         addToast("error", `Сбой API панели: ${err.message || err}`);
-
         return;
-
       }
-
     }
 
-
-
-    const cleanDomain = panelDomain.trim();
+    const cleanDomain = panelDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    const cleanSubDomain = subDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 
     if (preset !== "node-only" && !cleanDomain) {
       addToast("error", "Укажите домен панели управления (например: panel.domain.com) для выпуска SSL-сертификата и настройки веб-сервера.");
       return;
+    }
+
+    if (preset !== "node-only" && useSubDomain) {
+      if (!cleanSubDomain) {
+        addToast("error", "Укажите отдельный домен для страницы подписок.");
+        return;
+      }
+      if (cleanSubDomain.toLowerCase() === cleanDomain.toLowerCase()) {
+        addToast("error", "Домен страницы подписок должен отличаться от домена панели управления.");
+        return;
+      }
     }
 
     if (preset !== "node-only" && components.includes("panel")) {
@@ -1600,114 +1702,72 @@ export function App() {
       return;
     }
 
-    let webUrl = "";
-
-    if (cleanDomain) {
-
-      const gate = useGate && secretGate ? "/" + secretGate.replace(/^\//, "") : "";
-
-      webUrl = `https://${cleanDomain}${gate}`;
-
-      setDeployedWebUrl(webUrl);
-
+    if (useGate) {
+      const cleanGate = secretGate.trim().replace(/^\/+/, "");
+      if (!cleanGate) {
+        addToast("error", "Укажите путь секретного гейта (например: admin_gate).");
+        return;
+      }
+      if (!/^[a-zA-Z0-9_\-]+$/.test(cleanGate)) {
+        addToast("error", "Секретный гейт может содержать только латинские буквы, цифры, дефис и подчеркивание.");
+        return;
+      }
     }
 
-
+    let webUrl = "";
+    if (cleanDomain) {
+      const gate = useGate && secretGate ? "/" + secretGate.trim().replace(/^\/+/, "") : "";
+      webUrl = `https://${cleanDomain}${gate}`;
+      setDeployedWebUrl(webUrl);
+    }
 
     let calculatedPanelIp = customPanelIp.trim();
-
     if (!calculatedPanelIp && nodePanelUrl.trim()) {
-
       try {
-
         const u = new URL(nodePanelUrl.trim().startsWith("http") ? nodePanelUrl.trim() : `https://${nodePanelUrl.trim()}`);
-
         calculatedPanelIp = u.hostname;
-
       } catch {
-
         calculatedPanelIp = nodePanelUrl.trim().replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
-
       }
-
     }
 
-
-
     const plan = new types.DeploymentPlan({
-
       components: components,
-
       domain: cleanDomain,
-
       panel_domain: cleanDomain,
-
-      subscription_domain: subDomain.trim(),
-
+      subscription_domain: cleanSubDomain,
       node_port: nodePort,
-
       node_secret: finalSecret,
-
       proxy: proxy,
-
       subscription_mode: "bundled",
-
-      secret_gate: useGate ? secretGate : "",
-
+      secret_gate: useGate ? secretGate.trim().replace(/^\/+/, "") : "",
       use_camouflage: useCamouflage,
-
       ufw_setup: useUfw,
-
-      ssh_host: sshHost,
-
+      ssh_host: sshHost.trim(),
       ssh_port: sshPort,
-
-      ssh_user: sshUser,
-
+      ssh_user: sshUser.trim(),
       ssh_password: sshPass,
-
-      ssh_key: sshKey,
-
-      output_dir: outDir,
-
+      ssh_key: sshKey.trim(),
+      output_dir: outDir.trim(),
       deployment_mode: deployMode,
-
       use_cloudflare_dns: useCloudflareDns,
-
       cloudflare_api_token: cloudflareToken.trim(),
-
       panel_ip: calculatedPanelIp,
-
       hide_node_port: hideNodePort,
-
       stealth_drop: stealthDrop,
-
       deploy_decoy: deployDecoy,
-
-      decoy_domain: deployDecoy ? nodeDecoyDomain.trim() : "",
-
+      decoy_domain: deployDecoy ? cleanDecoyDomain : "",
       port_mode: portMode,
-
       decoy_template: decoyTemplate,
-
       decoy_clone_url: decoyCloneUrl.trim(),
-
       torrent_blocker: torrentBlocker,
-
       block_spam_ports: blockSpamPorts,
-
       xray_core_type: xrayCoreType,
-
       enable_tinyauth: false,
-
       performance_optimization: optimizePerformance,
-
       admin_creation_mode: adminCreationMode,
-
       admin_username: adminCreationMode === "custom" ? adminUsername.trim() : "admin",
-
       admin_password: adminCreationMode === "custom" ? adminPassword.trim() : "",
-
     });
 
 
@@ -4473,8 +4533,18 @@ export function App() {
 
                               <div
                                 className={`preset-tile ${portMode === "classic" ? "selected" : ""}`}
-                                onClick={() => setPortMode("classic")}
-                                style={{ cursor: "pointer", padding: "16px" }}
+                                onClick={() => {
+                                  if (preset === "all-in-one") {
+                                    addToast("info", "Для установки «Все в одном» на одном VPS используется режим единого порта 443 (Stealth Fallback), исключающий конфликт портов Nginx и Xray.");
+                                    return;
+                                  }
+                                  setPortMode("classic");
+                                }}
+                                style={{
+                                  cursor: preset === "all-in-one" ? "not-allowed" : "pointer",
+                                  padding: "16px",
+                                  opacity: preset === "all-in-one" ? 0.65 : 1,
+                                }}
                               >
                                 <div className="preset-tile-header">
                                   <div className="preset-tile-icon">
@@ -4484,7 +4554,12 @@ export function App() {
                                     {portMode === "classic" && <div className="preset-radio-dot" />}
                                   </div>
                                 </div>
-                                <div className="preset-tile-title">Классический режим</div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                                  <div className="preset-tile-title" style={{ margin: 0 }}>Классический режим</div>
+                                  {preset === "all-in-one" && (
+                                    <span className="badge badge-warning" style={{ fontSize: "10.5px", padding: "1px 6px" }}>Только для раздельных VPS</span>
+                                  )}
+                                </div>
                                 <div className="preset-tile-desc">
                                   Раздельные порты: веб-панель и подписки работают на порту 443, а узел Xray Reality принимает подключения на отдельном порту (2222 / 8444).
                                 </div>
@@ -8628,10 +8703,6 @@ export function App() {
                 <button
                   className="win-button primary"
                   onClick={() => {
-                    if (step === 2 && preset !== "node-only" && !panelDomain.trim()) {
-                      addToast("info", "Пожалуйста, укажите домен панели управления (например: panel.domain.com)");
-                      return;
-                    }
                     changeStep(step + 1);
                   }}
                 >

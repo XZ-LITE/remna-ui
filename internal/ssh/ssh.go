@@ -946,7 +946,7 @@ fi
 
 		// Deploy SelfSteal Decoy site on port 8444 if enabled
 		if plan.DeployDecoy {
-			cleanDecoyDomain := strings.TrimSpace(plan.DecoyDomain)
+			cleanDecoyDomain := dns.NormalizeDomain(plan.DecoyDomain)
 			if cleanDecoyDomain != "" {
 				emitLog("step", fmt.Sprintf("Настройка SelfSteal Decoy-сайта для домена %s (Certbot Let's Encrypt + Nginx :8444)...", cleanDecoyDomain))
 			} else {
@@ -1515,7 +1515,7 @@ fi
 SHORT_ID=$(openssl rand -hex 8)
 
 DEF_PROFILES=$(curl -s "${API_BASE}/api/config-profiles" -H "Authorization: Bearer ${TOKEN}")
-DEF_UUID=$(echo "$DEF_PROFILES" | jq -r '.response[0].uuid // empty')
+DEF_UUID=$(echo "$DEF_PROFILES" | jq -r '(.response.configProfiles[0].uuid // .response[0].uuid // empty)')
 if [ -n "$DEF_UUID" ] && [ "$DEF_UUID" != "null" ]; then
   curl -s -X DELETE "${API_BASE}/api/config-profiles/${DEF_UUID}" -H "Authorization: Bearer ${TOKEN}" >/dev/null 2>&1 || true
 fi
@@ -1562,8 +1562,8 @@ PROFILE_PAYLOAD=$(jq -n   --arg name "Stealth Reality (eGames)"   --arg domain "
 
 PROF_RES=$(curl -s -X POST "${API_BASE}/api/config-profiles"   -H "Authorization: Bearer ${TOKEN}"   -H "Content-Type: application/json"   -d "${PROFILE_PAYLOAD}")
 
-CONFIG_UUID=$(echo "$PROF_RES" | jq -r '.response.uuid // empty')
-INBOUND_UUID=$(echo "$PROF_RES" | jq -r '.response.inbounds[0].uuid // empty')
+CONFIG_UUID=$(echo "$PROF_RES" | jq -r '(.response.uuid // .response.configProfile.uuid // empty)')
+INBOUND_UUID=$(echo "$PROF_RES" | jq -r '(.response.inbounds[0].uuid // .response.configProfile.inbounds[0].uuid // empty)')
 
 if [ -n "$CONFIG_UUID" ] && [ "$CONFIG_UUID" != "null" ]; then
   echo "Профиль маскировки Stealth Reality успешно создан!"
@@ -1594,10 +1594,17 @@ if [ -n "$CONFIG_UUID" ] && [ "$CONFIG_UUID" != "null" ]; then
   curl -s -X POST "${API_BASE}/api/hosts"     -H "Authorization: Bearer ${TOKEN}"     -H "Content-Type: application/json"     -d "${HOST_PAYLOAD}" >/dev/null 2>&1 || true
 
   SQUADS=$(curl -s "${API_BASE}/api/internal-squads" -H "Authorization: Bearer ${TOKEN}")
-  SQUAD_UUID=$(echo "$SQUADS" | jq -r '.response[0].uuid // empty')
+  SQUAD_UUID=$(echo "$SQUADS" | jq -r '(.response.internalSquads[0].uuid // .response[0].uuid // empty)')
   if [ -n "$SQUAD_UUID" ] && [ "$SQUAD_UUID" != "null" ] && [ -n "$INBOUND_UUID" ]; then
-    SQUAD_PAYLOAD=$(jq -n --arg inUuid "${INBOUND_UUID}" '{inbounds: [$inUuid]}')
-    curl -s -X PATCH "${API_BASE}/api/internal-squads/${SQUAD_UUID}"       -H "Authorization: Bearer ${TOKEN}"       -H "Content-Type: application/json"       -d "${SQUAD_PAYLOAD}" >/dev/null 2>&1 || true
+    SQUAD_PAYLOAD=$(jq -n --arg sqUuid "${SQUAD_UUID}" --arg inUuid "${INBOUND_UUID}" '{uuid: $sqUuid, inbounds: [$inUuid]}')
+    curl -s -X PATCH "${API_BASE}/api/internal-squads" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "${SQUAD_PAYLOAD}" >/dev/null 2>&1 || \
+    curl -s -X PATCH "${API_BASE}/api/internal-squads/${SQUAD_UUID}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{\"inbounds\":[\"${INBOUND_UUID}\"]}" >/dev/null 2>&1 || true
     echo "Нода и сквад успешно сконфигурированы!"
   fi
 fi
