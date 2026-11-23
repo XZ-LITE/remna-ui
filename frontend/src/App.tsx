@@ -220,6 +220,7 @@ import { ShimmerSkeleton, ServerCardSkeleton } from "./components/ui/ShimmerSkel
 import { InfoBar } from "./components/ui/InfoBar";
 
 import { CountrySelector } from "./components/ui/CountrySelector";
+import { WinSelect } from "./components/ui/WinSelect";
 
 
 
@@ -3639,14 +3640,15 @@ export function App() {
                             title="Обратный прокси-сервер"
                             description="Обеспечивает SSL-шифрование, защиту Security Gate и маскировку веб-трафика панели"
                             action={
-                              <select
-                                className="win-select"
+                              <WinSelect
                                 value={proxy}
-                                onChange={(e) => setProxy(e.target.value)}
-                              >
-                                <option value="nginx">Nginx (Рекомендуется — eGames Gate + Let's Encrypt)</option>
-                                <option value="caddy">Caddy (Авто-выпуск SSL)</option>
-                              </select>
+                                onChange={setProxy}
+                                options={[
+                                  { value: "nginx", label: "Nginx (Рекомендуется — eGames Gate + Let's Encrypt)" },
+                                  { value: "caddy", label: "Caddy (Авто-выпуск SSL)" },
+                                ]}
+                                style={{ minWidth: "320px" }}
+                              />
                             }
                           />
                         )}
@@ -3909,49 +3911,22 @@ export function App() {
                                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
 
                                     {savedServers.filter((s) => s.web_url || (s.label && s.label.includes("."))).length > 0 && (
-
-                                      <select
-
-                                        className="win-select"
-
+                                      <WinSelect
+                                        value=""
+                                        placeholder="Из сохранённых..."
                                         style={{ maxWidth: "160px", fontSize: "11px" }}
-
-                                        onChange={(e) => {
-
-                                          if (e.target.value) {
-
-                                            setNodePanelUrl(e.target.value);
-
+                                        onChange={(val) => {
+                                          if (val) {
+                                            setNodePanelUrl(val);
                                           }
-
                                         }}
-
-                                        defaultValue=""
-
-                                      >
-
-                                        <option value="" disabled>
-
-                                          Из сохранённых...
-
-                                        </option>
-
-                                        {savedServers
-
+                                        options={savedServers
                                           .filter((s) => s.web_url || (s.label && s.label.includes(".")))
-
-                                          .map((s) => (
-
-                                            <option key={s.id} value={extractOriginUrl(s.web_url || `https://${s.label}`)}>
-
-                                              {s.label || s.host}
-
-                                            </option>
-
-                                          ))}
-
-                                      </select>
-
+                                          .map((s) => ({
+                                            value: extractOriginUrl(s.web_url || `https://${s.label}`),
+                                            label: s.label || s.host,
+                                          }))}
+                                      />
                                     )}
 
                                     <input
@@ -4189,18 +4164,15 @@ export function App() {
                                           <span>Загрузка профилей...</span>
                                         </div>
                                       ) : panelProfiles.length > 0 ? (
-                                        <select
-                                          className="win-select"
+                                        <WinSelect
                                           style={{ minWidth: "260px" }}
                                           value={selectedProfileInbound}
-                                          onChange={(e) => setSelectedProfileInbound(e.target.value)}
-                                        >
-                                          {panelProfiles.map((p) => (
-                                            <option key={`${p.uuid}:${p.inbound_uuid}`} value={`${p.uuid}:${p.inbound_uuid}`}>
-                                              {p.name} ({p.protocol.toUpperCase()} :{p.port})
-                                            </option>
-                                          ))}
-                                        </select>
+                                          onChange={setSelectedProfileInbound}
+                                          options={panelProfiles.map((p) => ({
+                                            value: `${p.uuid}:${p.inbound_uuid}`,
+                                            label: `${p.name} (${p.protocol.toUpperCase()} :${p.port})`,
+                                          }))}
+                                        />
                                       ) : (
                                         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                                           <span style={{ fontSize: "12px", color: "var(--win-text-tertiary)" }}>Не загружены</span>
@@ -4228,31 +4200,30 @@ export function App() {
                                           <span>Загрузка сквадов...</span>
                                         </div>
                                       ) : panelSquads.length > 0 ? (
-                                        <select
-                                          className="win-select"
+                                        <WinSelect
                                           style={{ minWidth: "260px" }}
                                           value={selectedSquadUuid}
-                                          onChange={(e) => setSelectedSquadUuid(e.target.value)}
-                                        >
-                                          <option value="none">Не добавлять в сквад (настрою вручную)</option>
-                                          {panelSquads.map((sq) => (
-                                            <option key={sq.uuid} value={sq.uuid}>
-                                              {sq.name} ({sq.inbounds_count} инбаундов)
-                                            </option>
-                                          ))}
-                                        </select>
+                                          onChange={setSelectedSquadUuid}
+                                          options={[
+                                            { value: "none", label: "Не добавлять в сквад (настрою вручную)" },
+                                            ...panelSquads.map((sq) => ({
+                                              value: sq.uuid,
+                                              label: `${sq.name} (${sq.inbounds_count} инбаундов)`,
+                                            })),
+                                          ]}
+                                        />
                                       ) : (
                                         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                                           <span style={{ fontSize: "12px", color: "var(--win-text-tertiary)" }}>Не загружены</span>
-                                          <select
-                                            className="win-select"
+                                          <WinSelect
                                             style={{ minWidth: "220px" }}
                                             value={selectedSquadUuid}
-                                            onChange={(e) => setSelectedSquadUuid(e.target.value)}
-                                          >
-                                            <option value="default">Авто-привязка к Default-Squad</option>
-                                            <option value="none">Не добавлять в сквад</option>
-                                          </select>
+                                            onChange={setSelectedSquadUuid}
+                                            options={[
+                                              { value: "default", label: "Авто-привязка к Default-Squad" },
+                                              { value: "none", label: "Не добавлять в сквад" },
+                                            ]}
+                                          />
                                         </div>
                                       )
                                     }
@@ -4501,18 +4472,18 @@ export function App() {
                                     <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--win-text-primary)" }}>
                                       Шаблон маскировочного сайта (Decoy):
                                     </div>
-                                    <select
-                                      className="win-select"
+                                    <WinSelect
                                       value={decoyTemplate}
-                                      onChange={(e) => setDecoyTemplate(e.target.value)}
+                                      onChange={setDecoyTemplate}
+                                      options={[
+                                        { value: "random", label: "Случайный шаблон из каталога (Рекомендуется)" },
+                                        { value: "it_corp", label: "Корпоративный IT-сайт (ИТ-компания, SaaS)" },
+                                        { value: "ecommerce", label: "Интернет-магазин & Сервисы (E-Commerce)" },
+                                        { value: "portfolio", label: "Персональное портфолио / Блог" },
+                                        { value: "clone", label: "Клонировать существующий сайт (ввод URL)" },
+                                      ]}
                                       style={{ width: "100%" }}
-                                    >
-                                      <option value="random">Случайный шаблон из каталога (Рекомендуется)</option>
-                                      <option value="it_corp">Корпоративный IT-сайт (ИТ-компания, SaaS)</option>
-                                      <option value="ecommerce">Интернет-магазин & Сервисы (E-Commerce)</option>
-                                      <option value="portfolio">Персональное портфолио / Блог</option>
-                                      <option value="clone">Клонировать существующий сайт (ввод URL)</option>
-                                    </select>
+                                    />
                                     {decoyTemplate === "clone" && (
                                       <input
                                         type="text"
@@ -4603,15 +4574,15 @@ export function App() {
                               title="Ядро Xray-ноды (Xray Core Engine)"
                               description="Анти-ТСПУ форк Jolymmiles: поддержка X25519MLKEM768 и маскировка TLS фингерпринтов."
                               action={
-                                <select
-                                  className="win-select"
+                                <WinSelect
                                   value={xrayCoreType}
-                                  onChange={(e) => setXrayCoreType(e.target.value as "official" | "jolymmiles")}
+                                  onChange={(v) => setXrayCoreType(v as "official" | "jolymmiles")}
+                                  options={[
+                                    { value: "jolymmiles", label: "Jolymmiles Anti-TSPU" },
+                                    { value: "official", label: "XTLS / Xray-core" },
+                                  ]}
                                   style={{ minWidth: "190px" }}
-                                >
-                                  <option value="jolymmiles">Jolymmiles Anti-TSPU</option>
-                                  <option value="official">XTLS / Xray-core</option>
-                                </select>
+                                />
                               }
                             />
 
@@ -5299,15 +5270,15 @@ export function App() {
                                     title: "Ядро Xray-ноды (Xray Core Engine)",
                                     description: "Анти-ТСПУ форк Jolymmiles: поддержка X25519MLKEM768 и маскировка TLS фингерпринтов.",
                                     action: (
-                                      <select
-                                        className="win-select"
+                                      <WinSelect
                                         value={xrayCoreType}
-                                        onChange={(e) => setXrayCoreType(e.target.value as "official" | "jolymmiles")}
+                                        onChange={(v) => setXrayCoreType(v as "official" | "jolymmiles")}
+                                        options={[
+                                          { value: "jolymmiles", label: "Jolymmiles Anti-TSPU" },
+                                          { value: "official", label: "XTLS / Xray-core" },
+                                        ]}
                                         style={{ minWidth: "190px" }}
-                                      >
-                                        <option value="jolymmiles">Jolymmiles Anti-TSPU</option>
-                                        <option value="official">XTLS / Xray-core</option>
-                                      </select>
+                                      />
                                     ),
                                   },
                                 ] : []),
@@ -5327,18 +5298,18 @@ export function App() {
                                         Шаблон сайта из каталога eGames или автоматическое клонирование внешнего ресурса
                                       </div>
                                     </div>
-                                    <select
-                                      className="win-select"
+                                    <WinSelect
                                       value={decoyTemplate}
-                                      onChange={(e) => setDecoyTemplate(e.target.value)}
+                                      onChange={setDecoyTemplate}
+                                      options={[
+                                        { value: "random", label: "Случайный шаблон из каталога (Рекомендуется)" },
+                                        { value: "it_corp", label: "Корпоративный IT-сайт (ИТ-компания, SaaS)" },
+                                        { value: "ecommerce", label: "Интернет-магазин & Сервисы (E-Commerce)" },
+                                        { value: "portfolio", label: "Персональное портфолио / Блог" },
+                                        { value: "clone", label: "Клонировать существующий сайт (ввод URL)" },
+                                      ]}
                                       style={{ minWidth: "260px" }}
-                                    >
-                                      <option value="random">Случайный шаблон из каталога (Рекомендуется)</option>
-                                      <option value="it_corp">Корпоративный IT-сайт (ИТ-компания, SaaS)</option>
-                                      <option value="ecommerce">Интернет-магазин & Сервисы (E-Commerce)</option>
-                                      <option value="portfolio">Персональное портфолио / Блог</option>
-                                      <option value="clone">Клонировать существующий сайт (ввод URL)</option>
-                                    </select>
+                                    />
                                   </div>
                                   {decoyTemplate === "clone" && (
                                     <div style={{ marginTop: "2px" }}>

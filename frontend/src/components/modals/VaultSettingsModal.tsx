@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Lock, Unlock, ShieldCheck, KeyRound, AlertCircle, X, Check, RefreshCw } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { PasswordInput } from "../ui/PasswordInput";
+import { WinSelect } from "../ui/WinSelect";
 
 interface VaultSettingsModalProps {
   isOpen: boolean;
@@ -196,18 +197,18 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
               <div style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--win-text-primary)", marginBottom: "6px" }}>
                 Автоблокировка при неактивности:
               </div>
-              <select
-                className="win-select"
+              <WinSelect
                 style={{ width: "100%" }}
-                value={autoLockVal}
-                onChange={(e) => handleSaveAutoLock(parseInt(e.target.value) || 0)}
-              >
-                <option value={5}>Через 5 минут</option>
-                <option value={15}>Через 15 минут (Рекомендуется)</option>
-                <option value={30}>Через 30 минут</option>
-                <option value={60}>Через 1 час</option>
-                <option value={0}>Никогда (Только при закрытии программы)</option>
-              </select>
+                value={String(autoLockVal)}
+                onChange={(val) => handleSaveAutoLock(parseInt(val, 10) || 0)}
+                options={[
+                  { value: "5", label: "Через 5 минут" },
+                  { value: "15", label: "Через 15 минут (Рекомендуется)" },
+                  { value: "30", label: "Через 30 минут" },
+                  { value: "60", label: "Через 1 час" },
+                  { value: "0", label: "Никогда (Только при закрытии программы)" },
+                ]}
+              />
             </div>
 
             {/* Actions */}

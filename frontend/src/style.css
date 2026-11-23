@@ -1715,6 +1715,199 @@ input::-webkit-credentials-auto-fill-button {
   color: #1a1a1a !important;
 }
 
+/* Custom Fluent WinSelect dropdown */
+.win-select-container {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.win-select-container.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.win-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-family: var(--win-font-sans);
+  font-size: 13px;
+  color: var(--win-text-primary);
+  background: var(--win-control-bg);
+  border: 1px solid var(--win-control-stroke);
+  border-bottom: 1.5px solid var(--win-control-stroke-bottom);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.12s cubic-bezier(0.1, 0.9, 0.2, 1);
+  box-sizing: border-box;
+  width: 100%;
+  text-align: left;
+  outline: none;
+}
+
+.win-select-trigger:hover:not(:disabled) {
+  background: var(--win-control-bg-hover);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.win-select-trigger:focus-visible,
+.win-select-trigger.open {
+  border-bottom: 2px solid var(--win-accent);
+  background: var(--win-control-bg-active, rgba(255, 255, 255, 0.08));
+}
+
+.win-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.win-select-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.win-select-chevron {
+  flex-shrink: 0;
+  color: var(--win-text-secondary);
+  transition: transform 0.18s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+.win-select-chevron.open {
+  transform: rotate(180deg);
+  color: var(--win-accent);
+}
+
+.win-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1050;
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(26, 30, 40, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
+  animation: win-select-pop 0.14s cubic-bezier(0.1, 0.9, 0.2, 1);
+  box-sizing: border-box;
+}
+
+@keyframes win-select-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+:root[data-theme="light"] .win-select-menu {
+  background: rgba(246, 248, 250, 0.96);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.win-select-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.win-select-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.win-select-menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+
+.win-select-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.win-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--win-text-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.08s ease, color 0.08s ease;
+  min-height: 30px;
+  box-sizing: border-box;
+}
+
+.win-select-option:hover,
+.win-select-option.focused {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="light"] .win-select-option:hover,
+:root[data-theme="light"] .win-select-option.focused {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.win-select-option.selected {
+  background: rgba(96, 205, 255, 0.12);
+  color: var(--win-accent);
+  font-weight: 500;
+}
+
+:root[data-theme="light"] .win-select-option.selected {
+  background: rgba(0, 103, 192, 0.1);
+  color: var(--win-accent);
+}
+
+.win-select-option-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.win-select-option-desc {
+  font-size: 11px;
+  color: var(--win-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.win-select-option-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--win-text-secondary);
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.win-select-check {
+  flex-shrink: 0;
+  color: var(--win-accent);
+  margin-left: 6px;
+}
+
 /* WinUI 3 Toggle Switch */
 .win-switch {
   display: inline-flex;

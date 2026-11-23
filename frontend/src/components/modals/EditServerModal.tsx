@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { PasswordInput } from "../ui/PasswordInput";
+import { WinSelect } from "../ui/WinSelect";
 
 export interface EditServerData {
   server: types.SavedServer;
@@ -263,18 +264,18 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "2px" }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label">Привязана к Мастер-панели</label>
-                  <select
-                    className="win-select"
+                  <WinSelect
                     value={data.parentMasterId || ""}
-                    onChange={(e) => onChange({ ...data, parentMasterId: e.target.value })}
-                  >
-                    <option value="">Не привязана (Автономная нода)</option>
-                    {availableMasters.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label || m.host} ({m.host})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => onChange({ ...data, parentMasterId: val })}
+                    options={[
+                      { value: "", label: "Не привязана (Автономная нода)" },
+                      ...availableMasters.map((m) => ({
+                        value: m.id,
+                        label: `${m.label || m.host} (${m.host})`,
+                      })),
+                    ]}
+                    style={{ width: "100%" }}
+                  />
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "110px minmax(0, 1fr)", gap: "10px" }}>

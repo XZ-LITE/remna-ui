@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useMemo } from "react";
+import { WinSelect, WinSelectOption } from "./WinSelect";
 
 export interface CountryOption {
   code: string;
@@ -34,18 +35,21 @@ export const CountrySelector: React.FC<CountrySelectorProps> = ({
   onChange,
   style,
 }) => {
+  const options: WinSelectOption[] = useMemo(
+    () =>
+      COUNTRIES.map((c) => ({
+        value: c.code,
+        label: `${c.code} — ${c.name}`,
+      })),
+    []
+  );
+
   return (
-    <select
-      className="win-select"
+    <WinSelect
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={onChange}
+      options={options}
       style={{ minWidth: "220px", ...style }}
-    >
-      {COUNTRIES.map((c) => (
-        <option key={c.code} value={c.code}>
-          {c.code} — {c.name}
-        </option>
-      ))}
-    </select>
+    />
   );
 };
