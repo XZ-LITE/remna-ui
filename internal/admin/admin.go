@@ -573,16 +573,28 @@ func getSSHKey(server types.SavedServer) string {
 func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	key := getSSHKey(server)
 
+	// 1. Fast lookup under lock without any network I/O
 	sshPoolMu.Lock()
-	if entry, exists := sshPool[key]; exists && entry.client != nil {
-		// Verify connection health with a lightweight keepalive request
-		_, _, err := entry.client.SendRequest("keepalive@openssh.com", true, nil)
+	entry, exists := sshPool[key]
+	var existingClient *ssh.Client
+	if exists && entry != nil {
+		existingClient = entry.client
+	}
+	sshPoolMu.Unlock()
+
+	// 2. Health check and session creation OUTSIDE of the global mutex
+	if existingClient != nil {
+		_, _, err := existingClient.SendRequest("keepalive@openssh.com", true, nil)
 		if err == nil {
-			session, sessErr := entry.client.NewSession()
+			session, sessErr := existingClient.NewSession()
 			if sessErr == nil {
-				entry.inUse++
-				entry.lastUsed = time.Now()
+				sshPoolMu.Lock()
+				if e, ok := sshPool[key]; ok && e.client == existingClient {
+					e.inUse++
+					e.lastUsed = time.Now()
+				}
 				sshPoolMu.Unlock()
+
 				release := func() {
 					session.Close()
 					sshPoolMu.Lock()
@@ -598,15 +610,19 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 				return session, release, nil
 			}
 		}
-		// Connection failed or session cannot be opened; clean up stale client if not currently in use
-		if entry.inUse == 0 {
-			entry.client.Close()
-			delete(sshPool, key)
-		}
-	}
-	sshPoolMu.Unlock()
 
-	// Dial fresh client outside of global lock to prevent blocking concurrent dials to different hosts
+		// Existing client is dead or stale: clean it up under lock
+		sshPoolMu.Lock()
+		if e, ok := sshPool[key]; ok && e.client == existingClient {
+			if e.inUse <= 0 {
+				existingClient.Close()
+				delete(sshPool, key)
+			}
+		}
+		sshPoolMu.Unlock()
+	}
+
+	// 3. Dial fresh client outside of global lock to prevent blocking concurrent dials to different hosts
 	newClient, err := getSSHClient(server)
 	if err != nil {
 		return nil, nil, err
@@ -619,7 +635,7 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	}
 
 	sshPoolMu.Lock()
-	if old, exists := sshPool[key]; exists && old.client != nil && old.inUse == 0 {
+	if old, exists := sshPool[key]; exists && old.client != nil && old.inUse <= 0 {
 		old.client.Close()
 	}
 	sshPool[key] = &pooledSSHClient{
@@ -735,13 +751,15 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 
+	const telemetryDelimiter = "__REMNA_SECTION_TEL_v3__"
+
 	var cmd string
 	if server.Role == "node" {
 		// Lightweight interrogation optimized for Edge Nodes: avoids heavy & non-existent Postgres/Panel checks
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; echo ""; echo "---"; echo "0"; echo "---"; echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; echo "no"; echo "---"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	} else {
 		// Comprehensive interrogation for Master Panel VPS (includes Postgres DB, Backups, and Valkey Sockets)
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "---"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "---"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "---"; uptime -p 2>/dev/null || uptime; echo "---"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "---"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "---"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "---"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "---"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "---"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "---"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "---"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	}
 
 	out, err := session.Output(cmd)
@@ -755,7 +773,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 
-	parts := strings.Split(string(out), "---")
+	parts := strings.Split(string(out), telemetryDelimiter)
 
 	hostInfo := "Linux VPS"
 

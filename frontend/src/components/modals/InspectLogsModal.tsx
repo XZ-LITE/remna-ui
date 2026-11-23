@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Terminal as TerminalIcon, Search, RotateCcw, RefreshCw, Copy, X, AlertTriangle, Wrench } from "lucide-react";
-import { types } from "../../../wailsjs/go/models";
+import * as types from "../../../bindings/remna-ui/internal/types/models";
 
 interface InspectLogsModalProps {
   server: types.SavedServer;

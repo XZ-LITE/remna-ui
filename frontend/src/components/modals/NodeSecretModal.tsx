@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Radio, Terminal as TerminalIcon, Check, Copy, X, Zap, RefreshCw, ExternalLink } from "lucide-react";
-import { types } from "../../../wailsjs/go/models";
+import * as types from "../../../bindings/remna-ui/internal/types/models";
 
 interface NodeSecretModalProps {
   server: types.SavedServer;

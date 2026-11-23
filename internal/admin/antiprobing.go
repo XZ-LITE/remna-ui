@@ -20,6 +20,10 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 	var sb strings.Builder
 	sb.WriteString("#!/bin/bash\nset -e\n\n")
 
+	// 0. Anti-lockout safeguard: ensure SSH port is allowed in main INPUT chain
+	sb.WriteString("# 0. Anti-lockout safeguard for SSH session\n")
+	sb.WriteString(fmt.Sprintf("iptables -C INPUT -p tcp --dport %d -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport %d -j ACCEPT 2>/dev/null || true\n\n", sshPort, sshPort))
+
 	// 1. Prepare Chains
 	sb.WriteString("# 1. Clean existing Remna chains\n")
 	sb.WriteString("iptables -D INPUT -j REMNA_INPUT 2>/dev/null || true\n")
@@ -91,7 +95,7 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 
 	// 6. Connect REMNA_INPUT into INPUT
 	sb.WriteString("# 6. Link into INPUT chain\n")
-	sb.WriteString("iptables -A INPUT -j REMNA_INPUT\n\n")
+	sb.WriteString("iptables -C INPUT -j REMNA_INPUT 2>/dev/null || iptables -A INPUT -j REMNA_INPUT\n\n")
 
 	// 7. Stealth DROP (Eliminate TCP RST fingerprint)
 	if stealthDrop {
@@ -101,6 +105,7 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 
 		// IPv6 parity
 		sb.WriteString("if command -v ip6tables >/dev/null 2>&1; then\n")
+		sb.WriteString(fmt.Sprintf("  ip6tables -C INPUT -p tcp --dport %d -j ACCEPT 2>/dev/null || ip6tables -I INPUT 1 -p tcp --dport %d -j ACCEPT 2>/dev/null || true\n", sshPort, sshPort))
 		sb.WriteString("  ip6tables -D INPUT -j REMNA_INPUT6 2>/dev/null || true\n")
 		sb.WriteString("  ip6tables -F REMNA_INPUT6 2>/dev/null || true\n")
 		sb.WriteString("  ip6tables -X REMNA_INPUT6 2>/dev/null || true\n")
@@ -114,7 +119,7 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 		sb.WriteString("  ip6tables -A REMNA_INPUT6 -p tcp --dport 80 -j ACCEPT 2>/dev/null || true\n")
 		sb.WriteString("  ip6tables -A REMNA_INPUT6 -p tcp --dport 443 -j ACCEPT 2>/dev/null || true\n")
 		sb.WriteString(fmt.Sprintf("  ip6tables -A REMNA_INPUT6 -p tcp --dport %d -j DROP 2>/dev/null || true\n", nodePort))
-		sb.WriteString("  ip6tables -A INPUT -j REMNA_INPUT6 2>/dev/null || true\n")
+		sb.WriteString("  ip6tables -C INPUT -j REMNA_INPUT6 2>/dev/null || ip6tables -A INPUT -j REMNA_INPUT6 2>/dev/null || true\n")
 		sb.WriteString("  ip6tables -P INPUT DROP 2>/dev/null || true\n")
 		sb.WriteString("fi\n\n")
 	}
@@ -133,10 +138,22 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 
 	// 9. Persist rules
 	sb.WriteString("# 9. Save Rules for Reboots\n")
+	sb.WriteString("if ! command -v netfilter-persistent >/dev/null 2>&1; then\n")
+	sb.WriteString("  export DEBIAN_FRONTEND=noninteractive\n")
+	sb.WriteString("  if command -v apt-get >/dev/null 2>&1; then\n")
+	sb.WriteString("    apt-get update -qq >/dev/null 2>&1 || true\n")
+	sb.WriteString("    echo \"iptables-persistent iptables-persistent/autosave_v4 boolean true\" | debconf-set-selections 2>/dev/null || true\n")
+	sb.WriteString("    echo \"iptables-persistent iptables-persistent/autosave_v6 boolean true\" | debconf-set-selections 2>/dev/null || true\n")
+	sb.WriteString("    apt-get install -y -qq iptables-persistent netfilter-persistent >/dev/null 2>&1 || true\n")
+	sb.WriteString("  fi\n")
+	sb.WriteString("fi\n")
 	sb.WriteString("mkdir -p /etc/iptables\n")
 	sb.WriteString("iptables-save > /etc/iptables/rules.v4 2>/dev/null || true\n")
 	sb.WriteString("command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true\n")
-	sb.WriteString("command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save 2>/dev/null || true\n")
+	sb.WriteString("if command -v netfilter-persistent >/dev/null 2>&1; then\n")
+	sb.WriteString("  netfilter-persistent save 2>/dev/null || true\n")
+	sb.WriteString("  systemctl enable netfilter-persistent 2>/dev/null || true\n")
+	sb.WriteString("fi\n")
 
 	return sb.String()
 }

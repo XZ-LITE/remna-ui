@@ -19,7 +19,7 @@ import {
   Sparkles,
   Info,
 } from "lucide-react";
-import { types } from "../../../wailsjs/go/models";
+import * as types from "../../../bindings/remna-ui/internal/types/models";
 
 interface AntiProbingAuditModalProps {
   server: types.SavedServer;

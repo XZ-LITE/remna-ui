@@ -347,16 +347,19 @@ func fetchActiveConfigProfile(targetURL, token, decoyDomain string, client *http
 	return candidateUUID, candidateInbounds, nil
 }
 
-func generateX25519Key() string {
+func generateX25519Key() (string, error) {
 	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
-		return "kK34TqU826q_sJ5jL0V9qW1eR4tY7uI0oP2aSdFgHjK"
+		return "", fmt.Errorf("сбой генерации приватного ключа X25519: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(priv.Bytes())
+	return base64.RawURLEncoding.EncodeToString(priv.Bytes()), nil
 }
 
 func createDefaultConfigProfile(targetURL, token string, decoyDomain, portMode string, torrentBlocker, blockSpamPorts bool, client *http.Client) (string, []string, error) {
-	privateKey := generateX25519Key()
+	privateKey, errKey := generateX25519Key()
+	if errKey != nil {
+		return "", nil, errKey
+	}
 
 	dest := "www.microsoft.com:443"
 	serverNames := []string{"www.microsoft.com"}

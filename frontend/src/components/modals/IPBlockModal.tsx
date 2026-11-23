@@ -14,7 +14,7 @@ import {
   Info,
   Globe,
 } from "lucide-react";
-import { types } from "../../../wailsjs/go/models";
+import * as types from "../../../bindings/remna-ui/internal/types/models";
 
 interface IPProbeItem {
   node_id: string;

@@ -22,7 +22,7 @@ import {
   ShieldAlert,
   MapPin,
 } from "lucide-react";
-import { types } from "../../../wailsjs/go/models";
+import * as types from "../../../bindings/remna-ui/internal/types/models";
 
 export interface EditServerData {
   server: types.SavedServer;
