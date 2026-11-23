@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check } from "lucide-react";
 
 export interface WinSelectOption {
@@ -32,17 +33,115 @@ export const WinSelect: React.FC<WinSelectProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const [menuCoords, setMenuCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    placement: "bottom" | "top";
+  }>({ left: 0, width: 0, maxHeight: 280, placement: "bottom" });
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => o.value === value);
 
-  // Close when clicking outside
+  // Recalculate menu position relative to viewport
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+
+    // If trigger element is hidden, detached, or scrolled offscreen, close menu
+    if (rect.width === 0 && rect.height === 0) {
+      setIsOpen(false);
+      return;
+    }
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      setIsOpen(false);
+      return;
+    }
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const placement = spaceBelow < 220 && spaceAbove > spaceBelow ? "top" : "bottom";
+
+    // Dynamic max-height so menu never spills past the viewport edges
+    const maxHeight = placement === "top"
+      ? Math.min(280, Math.max(100, spaceAbove - 16))
+      : Math.min(280, Math.max(100, spaceBelow - 16));
+
+    // Menu width logic: minimum is trigger width, or minMenuWidth
+    let targetWidth = rect.width;
+    if (minMenuWidth) {
+      const parsed = parseInt(minMenuWidth, 10);
+      if (!isNaN(parsed) && parsed > targetWidth) {
+        targetWidth = parsed;
+      }
+    }
+
+    // Ensure menu does not exceed viewport width
+    if (targetWidth > window.innerWidth - 24) {
+      targetWidth = window.innerWidth - 24;
+    }
+
+    // Keep menu within viewport horizontally
+    let left = rect.left;
+    if (left + targetWidth > window.innerWidth - 12) {
+      left = Math.max(12, window.innerWidth - targetWidth - 12);
+    }
+    if (left < 12) left = 12;
+
+    if (placement === "top") {
+      setMenuCoords({
+        bottom: window.innerHeight - rect.top + 4,
+        left,
+        width: targetWidth,
+        maxHeight,
+        placement: "top",
+      });
+    } else {
+      setMenuCoords({
+        top: rect.bottom + 4,
+        left,
+        width: targetWidth,
+        maxHeight,
+        placement: "bottom",
+      });
+    }
+  }, [minMenuWidth]);
+
+  const openMenu = () => {
+    if (disabled) return;
+    updatePosition();
+    setIsOpen(true);
+    const idx = options.findIndex((o) => o.value === value);
+    setFocusedIndex(idx >= 0 ? idx : 0);
+  };
+
+  const closeMenu = () => {
+    setIsOpen(false);
+  };
+
+  useLayoutEffect(() => {
+    if (isOpen) {
+      updatePosition();
+    }
+  }, [isOpen, updatePosition]);
+
+  // Handle position tracking, click outside, and escape key
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(target) &&
+        menuRef.current &&
+        !menuRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -50,16 +149,26 @@ export const WinSelect: React.FC<WinSelectProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setIsOpen(false);
+        triggerRef.current?.focus();
       }
+    };
+
+    const handleScrollOrResize = () => {
+      updatePosition();
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleScrollOrResize);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePosition]);
 
   // Keep focused item visible on keyboard nav
   useEffect(() => {
@@ -74,6 +183,7 @@ export const WinSelect: React.FC<WinSelectProps> = ({
   const handleSelect = (val: string) => {
     onChange(val);
     setIsOpen(false);
+    triggerRef.current?.focus();
   };
 
   const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
@@ -82,9 +192,7 @@ export const WinSelect: React.FC<WinSelectProps> = ({
     if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
       e.preventDefault();
       if (!isOpen) {
-        setIsOpen(true);
-        const idx = options.findIndex((o) => o.value === value);
-        setFocusedIndex(idx >= 0 ? idx : 0);
+        openMenu();
       } else if (e.key === "ArrowDown") {
         setFocusedIndex((prev) => (prev < options.length - 1 ? prev + 1 : 0));
       }
@@ -98,6 +206,57 @@ export const WinSelect: React.FC<WinSelectProps> = ({
       }
     }
   };
+
+  const menuDropdown = isOpen ? (
+    <div
+      ref={menuRef}
+      className={`win-select-menu placement-${menuCoords.placement}`}
+      role="listbox"
+      style={{
+        position: "fixed",
+        top: menuCoords.top !== undefined ? `${menuCoords.top}px` : "auto",
+        bottom: menuCoords.bottom !== undefined ? `${menuCoords.bottom}px` : "auto",
+        left: `${menuCoords.left}px`,
+        width: `${menuCoords.width}px`,
+        minWidth: minMenuWidth || `${menuCoords.width}px`,
+        maxHeight: menuCoords.maxHeight ? `${menuCoords.maxHeight}px` : "280px",
+        zIndex: 15000,
+      }}
+    >
+      {options.map((opt, idx) => {
+        const isSelected = opt.value === value;
+        const isFocused = idx === focusedIndex;
+
+        return (
+          <div
+            key={opt.value}
+            role="option"
+            aria-selected={isSelected}
+            className={`win-select-option ${isSelected ? "selected" : ""} ${isFocused ? "focused" : ""}`}
+            onClick={() => handleSelect(opt.value)}
+            onMouseEnter={() => setFocusedIndex(idx)}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+              {opt.icon && <span style={{ flexShrink: 0 }}>{opt.icon}</span>}
+              <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                <span className="win-select-option-text">{opt.label}</span>
+                {opt.description && (
+                  <span className="win-select-option-desc">{opt.description}</span>
+                )}
+              </div>
+              {opt.badge && (
+                <span className="win-select-option-badge">{opt.badge}</span>
+              )}
+            </div>
+
+            {isSelected && (
+              <Check size={13} className="win-select-check" />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  ) : null;
 
   return (
     <div
@@ -113,10 +272,18 @@ export const WinSelect: React.FC<WinSelectProps> = ({
     >
       {/* Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         className={`win-select-trigger ${isOpen ? "open" : ""}`}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={() => {
+          if (disabled) return;
+          if (!isOpen) {
+            openMenu();
+          } else {
+            closeMenu();
+          }
+        }}
         onKeyDown={handleTriggerKeyDown}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
@@ -138,48 +305,8 @@ export const WinSelect: React.FC<WinSelectProps> = ({
         />
       </button>
 
-      {/* Dropdown Menu Popup */}
-      {isOpen && (
-        <div
-          ref={menuRef}
-          className="win-select-menu"
-          role="listbox"
-          style={{ minWidth: minMenuWidth || "100%" }}
-        >
-          {options.map((opt, idx) => {
-            const isSelected = opt.value === value;
-            const isFocused = idx === focusedIndex;
-
-            return (
-              <div
-                key={opt.value}
-                role="option"
-                aria-selected={isSelected}
-                className={`win-select-option ${isSelected ? "selected" : ""} ${isFocused ? "focused" : ""}`}
-                onClick={() => handleSelect(opt.value)}
-                onMouseEnter={() => setFocusedIndex(idx)}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
-                  {opt.icon && <span style={{ flexShrink: 0 }}>{opt.icon}</span>}
-                  <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                    <span className="win-select-option-text">{opt.label}</span>
-                    {opt.description && (
-                      <span className="win-select-option-desc">{opt.description}</span>
-                    )}
-                  </div>
-                  {opt.badge && (
-                    <span className="win-select-option-badge">{opt.badge}</span>
-                  )}
-                </div>
-
-                {isSelected && (
-                  <Check size={13} className="win-select-check" />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Dropdown Menu Popup in Portal (prevents overflow clipping by parent cards/modals) */}
+      {typeof document !== "undefined" && menuDropdown && createPortal(menuDropdown, document.body)}
     </div>
   );
 };

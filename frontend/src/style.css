@@ -1789,10 +1789,8 @@ input::-webkit-credentials-auto-fill-button {
 }
 
 .win-select-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 1050;
+  position: fixed;
+  z-index: 15000;
   max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1801,13 +1799,22 @@ input::-webkit-credentials-auto-fill-button {
   background: rgba(26, 30, 40, 0.96);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
-  animation: win-select-pop 0.14s cubic-bezier(0.1, 0.9, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.4);
   box-sizing: border-box;
 }
 
-@keyframes win-select-pop {
+.win-select-menu.placement-bottom {
+  transform-origin: top left;
+  animation: win-select-pop-bottom 0.14s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+.win-select-menu.placement-top {
+  transform-origin: bottom left;
+  animation: win-select-pop-top 0.14s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+@keyframes win-select-pop-bottom {
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
@@ -1818,10 +1825,21 @@ input::-webkit-credentials-auto-fill-button {
   }
 }
 
+@keyframes win-select-pop-top {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 :root[data-theme="light"] .win-select-menu {
-  background: rgba(246, 248, 250, 0.96);
-  border-color: rgba(0, 0, 0, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  background: rgba(246, 248, 250, 0.98);
+  border-color: rgba(0, 0, 0, 0.14);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .win-select-menu::-webkit-scrollbar {
