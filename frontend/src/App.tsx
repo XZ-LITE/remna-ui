@@ -230,7 +230,7 @@ interface LogEntry {
 
 interface ToastMessage {
   id: number;
-  type: "success" | "error" | "info";
+  type: "success" | "error" | "info" | "warning";
   message: string;
   isExiting?: boolean;
 }
@@ -372,7 +372,7 @@ export function App() {
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = (type: "success" | "error" | "info", rawMessage: string) => {
+  const addToast = (type: "success" | "error" | "info" | "warning", rawMessage: string) => {
     let message = rawMessage;
     // Map cryptic Go / networking errors to user-friendly Russian messages
     if (message.includes("context deadline exceeded") || message.includes("Client.Timeout exceeded")) {
@@ -675,6 +675,7 @@ export function App() {
         return true;
       } else {
         const cleanDomain = panelDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+        const useSubDomain = Boolean(subDomain.trim());
         if (!cleanDomain) {
           addToast("error", "Укажите домен панели управления (например: panel.domain.com).");
           return false;
@@ -1765,6 +1766,7 @@ export function App() {
 
     const cleanDomain = panelDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
     const cleanSubDomain = subDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    const useSubDomain = Boolean(cleanSubDomain);
 
     if (preset !== "node-only" && !cleanDomain) {
       addToast("error", "Укажите домен панели управления (например: panel.domain.com) для выпуска SSL-сертификата и настройки веб-сервера.");
@@ -3127,6 +3129,8 @@ export function App() {
             {t.type === "error" && <AlertTriangle size={16} color="var(--win-status-danger)" />}
 
             {t.type === "info" && <Info size={16} color="var(--win-accent)" />}
+
+            {t.type === "warning" && <AlertCircle size={16} color="var(--win-status-warning)" />}
 
             <span className="win-toast-message">{t.message}</span>
 
@@ -7691,7 +7695,7 @@ export function App() {
         onDisableMasterPassword={handleDisableMasterPasswordAction}
         onSetAutoLockMinutes={handleSetAutoLockMinutesAction}
         onToast={addToast}
-        onRefreshStatus={checkVaultStatus}
+        onRefreshStatus={async () => { await checkVaultStatus(); }}
       />
 
     </div>

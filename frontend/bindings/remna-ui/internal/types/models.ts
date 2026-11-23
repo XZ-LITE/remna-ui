@@ -1372,14 +1372,16 @@ export class VPNProbeResult {
 export class VaultStatus {
     "enabled": boolean;
     "unlocked": boolean;
+
+    /**
+     * "dpapi" or "master_password"
+     */
     "mode": string;
     "auto_lock_minutes": number;
     "has_saved_servers": boolean;
     "message"?: string;
 
-    /**
-     * Creates a new VaultStatus instance.
-     */
+    /** Creates a new VaultStatus instance. */
     constructor($$source: Partial<VaultStatus> = {}) {
         if (!("enabled" in $$source)) {
             this["enabled"] = false;
@@ -1388,10 +1390,10 @@ export class VaultStatus {
             this["unlocked"] = false;
         }
         if (!("mode" in $$source)) {
-            this["mode"] = "dpapi";
+            this["mode"] = "";
         }
         if (!("auto_lock_minutes" in $$source)) {
-            this["auto_lock_minutes"] = 15;
+            this["auto_lock_minutes"] = 0;
         }
         if (!("has_saved_servers" in $$source)) {
             this["has_saved_servers"] = false;

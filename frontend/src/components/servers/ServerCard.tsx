@@ -57,7 +57,7 @@ export interface ServerCardProps {
 
   toggleServerCollapse: (id: string) => void;
   setActiveServerMenu: (id: string | null) => void;
-  setServerSubTab: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  setServerSubTab: React.Dispatch<React.SetStateAction<any>>;
   handleCopy: (text: string, label: string, key?: string) => void;
   handleOpenBrowser: (url: string) => void;
   handleOpenAudit: (srv: types.SavedServer) => void;
@@ -699,7 +699,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                               <>
                                 <button
                                   className={`server-subtab ${currentSubTab === "overview" ? "active" : ""}`}
-                                  onClick={() => setServerSubTab((prev) => ({ ...prev, [srv.id]: "overview" }))}
+                                  onClick={() => setServerSubTab((prev: any) => ({ ...prev, [srv.id]: "overview" }))}
                                 >
                                   <Gauge size={13} />
                                   <span>Обзор & Службы</span>
@@ -710,7 +710,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
 
                                 <button
                                   className={`server-subtab ${currentSubTab === "maintenance" ? "active" : ""}`}
-                                  onClick={() => setServerSubTab((prev) => ({ ...prev, [srv.id]: "maintenance" }))}
+                                  onClick={() => setServerSubTab((prev: any) => ({ ...prev, [srv.id]: "maintenance" }))}
                                 >
                                   <Wrench size={13} />
                                   <span>Обслуживание & Бэкапы</span>
@@ -725,7 +725,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                               <>
                                 <button
                                   className={`server-subtab ${currentSubTab === "overview" ? "active" : ""}`}
-                                  onClick={() => setServerSubTab((prev) => ({ ...prev, [srv.id]: "overview" }))}
+                                  onClick={() => setServerSubTab((prev: any) => ({ ...prev, [srv.id]: "overview" }))}
                                 >
                                   <Radio size={13} />
                                   <span>Статус & Служба</span>
@@ -742,7 +742,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
 
                                 <button
                                   className={`server-subtab ${currentSubTab === "security" ? "active" : ""}`}
-                                  onClick={() => setServerSubTab((prev) => ({ ...prev, [srv.id]: "security" }))}
+                                  onClick={() => setServerSubTab((prev: any) => ({ ...prev, [srv.id]: "security" }))}
                                 >
                                   <Shield size={13} />
                                   <span>Защита от ТСПУ & Сеть</span>
@@ -1652,7 +1652,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                     className={`win-button ${status?.anti_abuse_active ? "" : "hero-primary"}`}
                                     style={{ width: "100%", justifyContent: "center", height: "30px", fontSize: "12px" }}
                                     disabled={actionLoading[`anti-abuse-${srv.id}`]}
-                                    onClick={() => handleToggleAntiAbuse(srv, !!status?.anti_abuse_active)}
+                                    onClick={() => handleToggleAntiAbuse?.(srv, !!status?.anti_abuse_active)}
                                   >
                                     {actionLoading[`anti-abuse-${srv.id}`] ? (
                                       <RefreshCw size={12} className="animate-spin" />
@@ -1727,8 +1727,6 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                           )}
                         </div>
                       );
-
-  );
 });
 
 ServerCard.displayName = "ServerCard";

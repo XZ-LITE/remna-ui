@@ -102,6 +102,12 @@ export function DeploySelfStealDecoy(server: types$0.SavedServer, domain: string
     });
 }
 
+export function DisableMasterPassword(currentPass: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(805443092, currentPass).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function DownloadBackup(server: types$0.SavedServer, fileName: string): $CancellablePromise<types$0.CommandResult> {
     return $Call.ByID(953384835, server, fileName).then(($result: any) => {
         return $$createType0($result);
@@ -142,6 +148,10 @@ export function GetPanelSquads(panelURL: string, apiToken: string): $Cancellable
     });
 }
 
+export function GetSecureValue(key: string): $CancellablePromise<string> {
+    return $Call.ByID(2101605063, key);
+}
+
 export function GetServerStatus(server: types$0.SavedServer, password: string): $CancellablePromise<types$0.ServerStatusResult> {
     return $Call.ByID(880383150, server, password).then(($result: any) => {
         return $$createType14($result);
@@ -154,8 +164,20 @@ export function GetServers(): $CancellablePromise<types$0.SavedServer[]> {
     });
 }
 
+export function GetVaultStatus(): $CancellablePromise<types$0.VaultStatus> {
+    return $Call.ByID(789176443).then(($result: any) => {
+        return $$createType17($result);
+    });
+}
+
 export function InstallCloudflareWARP(server: types$0.SavedServer): $CancellablePromise<types$0.CommandResult> {
     return $Call.ByID(1837247541, server).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function LockVault(): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(563136070).then(($result: any) => {
         return $$createType0($result);
     });
 }
@@ -172,7 +194,7 @@ export function OptimizeNetworkBBR(server: types$0.SavedServer): $CancellablePro
 
 export function ProbeVPNTraffic(host: string, port: number, decoyDomain: string, customVless: string, server: types$0.SavedServer, sshPassword: string): $CancellablePromise<types$0.VPNProbeResult> {
     return $Call.ByID(293155752, host, port, decoyDomain, customVless, server, sshPassword).then(($result: any) => {
-        return $$createType17($result);
+        return $$createType18($result);
     });
 }
 
@@ -212,7 +234,7 @@ export function RestartContainer(server: types$0.SavedServer, container: string)
 
 export function RestoreBackup(server: types$0.SavedServer, fileName: string, scope: string, createSafetyBackup: boolean): $CancellablePromise<types$0.RestoreBackupResult> {
     return $Call.ByID(1800244779, server, fileName, scope, createSafetyBackup).then(($result: any) => {
-        return $$createType18($result);
+        return $$createType19($result);
     });
 }
 
@@ -228,19 +250,37 @@ export function SelectSSHKeyFile(): $CancellablePromise<string> {
     return $Call.ByID(2503410542);
 }
 
+export function SetAutoLockMinutes(mins: number): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(1119336380, mins).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function SetMasterPassword(oldPass: string, newPass: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(2700374612, oldPass, newPass).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function SetSecureValue(key: string, value: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(325963795, key, value).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function StartDeployment(plan: types$0.DeploymentPlan): $CancellablePromise<void> {
     return $Call.ByID(3926229120, plan);
 }
 
 export function TestPanelAPI(panelURL: string, apiToken: string): $CancellablePromise<types$0.PanelInfoResult> {
     return $Call.ByID(2892355839, panelURL, apiToken).then(($result: any) => {
-        return $$createType19($result);
+        return $$createType20($result);
     });
 }
 
 export function TestSSH(host: string, port: number, user: string, password: string, keyPath: string): $CancellablePromise<types$0.SSHTestResult> {
     return $Call.ByID(4121859417, host, port, user, password, keyPath).then(($result: any) => {
-        return $$createType20($result);
+        return $$createType21($result);
     });
 }
 
@@ -262,57 +302,15 @@ export function UninstallStack(server: types$0.SavedServer, purgeData: boolean):
     });
 }
 
+export function UnlockVault(password: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByID(2387715367, password).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function UpdateStackImages(server: types$0.SavedServer): $CancellablePromise<types$0.CommandResult> {
     return $Call.ByID(182914758, server).then(($result: any) => {
         return $$createType0($result);
-    });
-}
-
-export function GetVaultStatus(): $CancellablePromise<types$0.VaultStatus> {
-    return $Call.ByName("main.App.GetVaultStatus").then(($result: any) => {
-        return types$0.VaultStatus.createFrom($result);
-    });
-}
-
-export function UnlockVault(password: string): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByName("main.App.UnlockVault", password).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function LockVault(): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByName("main.App.LockVault").then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function SetMasterPassword(oldPass: string, newPass: string): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByName("main.App.SetMasterPassword", oldPass, newPass).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function DisableMasterPassword(currentPass: string): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByName("main.App.DisableMasterPassword", currentPass).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function SetAutoLockMinutes(mins: number): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByName("main.App.SetAutoLockMinutes", mins).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function SetSecureValue(key: string, value: string): $CancellablePromise<types$0.CommandResult> {
-    return $Call.ByName("main.App.SetSecureValue", key, value).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function GetSecureValue(key: string): $CancellablePromise<string> {
-    return $Call.ByName("main.App.GetSecureValue", key).then(($result: any) => {
-        return String($result || "");
     });
 }
 
@@ -334,7 +332,8 @@ const $$createType13 = $Create.Array($$createType12);
 const $$createType14 = types$0.ServerStatusResult.createFrom;
 const $$createType15 = types$0.SavedServer.createFrom;
 const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = types$0.VPNProbeResult.createFrom;
-const $$createType18 = types$0.RestoreBackupResult.createFrom;
-const $$createType19 = types$0.PanelInfoResult.createFrom;
-const $$createType20 = types$0.SSHTestResult.createFrom;
+const $$createType17 = types$0.VaultStatus.createFrom;
+const $$createType18 = types$0.VPNProbeResult.createFrom;
+const $$createType19 = types$0.RestoreBackupResult.createFrom;
+const $$createType20 = types$0.PanelInfoResult.createFrom;
+const $$createType21 = types$0.SSHTestResult.createFrom;

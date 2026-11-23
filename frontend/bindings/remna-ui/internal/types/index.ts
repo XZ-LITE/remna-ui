@@ -25,5 +25,6 @@ export {
     SavedServer,
     ServerMetrics,
     ServerStatusResult,
-    VPNProbeResult
+    VPNProbeResult,
+    VaultStatus
 } from "./models.js";

@@ -9,7 +9,7 @@ interface VaultSettingsModalProps {
   onSetMasterPassword: (oldPass: string, newPass: string) => Promise<boolean>;
   onDisableMasterPassword: (currentPass: string) => Promise<boolean>;
   onSetAutoLockMinutes: (mins: number) => Promise<boolean>;
-  onToast: (type: "success" | "error" | "info", msg: string) => void;
+  onToast: (type: "success" | "error" | "info" | "warning", msg: string) => void;
   onRefreshStatus: () => Promise<void>;
 }
 
