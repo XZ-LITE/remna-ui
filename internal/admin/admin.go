@@ -69,137 +69,19 @@ var (
 
 
 func encryptSecret(secret string) string {
-
-	if secret == "" || strings.HasPrefix(secret, "enc:dpapi:") {
-
+	enc, err := vault.GetManager().EncryptSecret(secret)
+	if err != nil {
 		return secret
-
 	}
-
-	if runtime.GOOS != "windows" {
-
-		return secret
-
-	}
-
-	bytes := []byte(secret)
-
-	var inBlob, outBlob dataBlob
-
-	inBlob.cbData = uint32(len(bytes))
-
-	if len(bytes) > 0 {
-
-		inBlob.pbData = &bytes[0]
-
-	}
-
-	r, _, _ := procCryptProtectData.Call(
-
-		uintptr(unsafe.Pointer(&inBlob)),
-
-		0,
-
-		0,
-
-		0,
-
-		0,
-
-		0x01, // CRYPTPROTECT_UI_FORBIDDEN
-
-		uintptr(unsafe.Pointer(&outBlob)),
-
-	)
-
-	if r == 0 || outBlob.pbData == nil {
-
-		return secret
-
-	}
-
-	defer syscall.LocalFree(syscall.Handle(unsafe.Pointer(outBlob.pbData)))
-
-	outBytes := make([]byte, outBlob.cbData)
-
-	for i := uint32(0); i < outBlob.cbData; i++ {
-
-		outBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(outBlob.pbData)) + uintptr(i)))
-
-	}
-
-	return "enc:dpapi:" + base64.StdEncoding.EncodeToString(outBytes)
-
+	return enc
 }
 
-
-
 func decryptSecret(encrypted string) string {
-
-	if !strings.HasPrefix(encrypted, "enc:dpapi:") {
-
+	dec, err := vault.GetManager().DecryptSecret(encrypted)
+	if err != nil {
 		return encrypted
-
 	}
-
-	if runtime.GOOS != "windows" {
-
-		return encrypted
-
-	}
-
-	rawB64 := strings.TrimPrefix(encrypted, "enc:dpapi:")
-
-	data, err := base64.StdEncoding.DecodeString(rawB64)
-
-	if err != nil || len(data) == 0 {
-
-		return encrypted
-
-	}
-
-	var inBlob, outBlob dataBlob
-
-	inBlob.cbData = uint32(len(data))
-
-	inBlob.pbData = &data[0]
-
-	r, _, _ := procCryptUnprotectData.Call(
-
-		uintptr(unsafe.Pointer(&inBlob)),
-
-		0,
-
-		0,
-
-		0,
-
-		0,
-
-		0x01, // CRYPTPROTECT_UI_FORBIDDEN
-
-		uintptr(unsafe.Pointer(&outBlob)),
-
-	)
-
-	if r == 0 || outBlob.pbData == nil {
-
-		return encrypted
-
-	}
-
-	defer syscall.LocalFree(syscall.Handle(unsafe.Pointer(outBlob.pbData)))
-
-	outBytes := make([]byte, outBlob.cbData)
-
-	for i := uint32(0); i < outBlob.cbData; i++ {
-
-		outBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(outBlob.pbData)) + uintptr(i)))
-
-	}
-
-	return string(outBytes)
-
+	return dec
 }
 
 
@@ -326,6 +208,22 @@ func SaveServer(server types.SavedServer) error {
 
 	for i, s := range servers {
 		if s.ID == server.ID || (s.Host == server.Host && s.Port == server.Port && s.Username == server.Username) {
+			// Preserve existing secrets if incoming server has masked value or empty
+			if server.Password == "••••••••" || (server.Password == "" && s.Password != "") {
+				server.Password = s.Password
+			}
+			if server.AdminPassword == "••••••••" || (server.AdminPassword == "" && s.AdminPassword != "") {
+				server.AdminPassword = s.AdminPassword
+			}
+			if server.SSHKey == "••••••••" || (server.SSHKey == "" && s.SSHKey != "") {
+				server.SSHKey = s.SSHKey
+			}
+			if server.ApiToken == "••••••••" || (server.ApiToken == "" && s.ApiToken != "") {
+				server.ApiToken = s.ApiToken
+			}
+			if server.NodeSecret == "••••••••" || (server.NodeSecret == "" && s.NodeSecret != "") {
+				server.NodeSecret = s.NodeSecret
+			}
 			servers[i] = server
 			updated = true
 			break
@@ -339,19 +237,39 @@ func SaveServer(server types.SavedServer) error {
 	copy(toSave, servers)
 	for i := range toSave {
 		if toSave[i].Password != "" {
-			toSave[i].Password, _ = vMgr.EncryptSecret(toSave[i].Password)
+			enc, err := vMgr.EncryptSecret(toSave[i].Password)
+			if err != nil {
+				return fmt.Errorf("ошибка шифрования пароля: %w", err)
+			}
+			toSave[i].Password = enc
 		}
 		if toSave[i].AdminPassword != "" {
-			toSave[i].AdminPassword, _ = vMgr.EncryptSecret(toSave[i].AdminPassword)
+			enc, err := vMgr.EncryptSecret(toSave[i].AdminPassword)
+			if err != nil {
+				return fmt.Errorf("ошибка шифрования пароля панели: %w", err)
+			}
+			toSave[i].AdminPassword = enc
 		}
 		if toSave[i].SSHKey != "" {
-			toSave[i].SSHKey, _ = vMgr.EncryptSecret(toSave[i].SSHKey)
+			enc, err := vMgr.EncryptSecret(toSave[i].SSHKey)
+			if err != nil {
+				return fmt.Errorf("ошибка шифрования SSH-ключа: %w", err)
+			}
+			toSave[i].SSHKey = enc
 		}
 		if toSave[i].ApiToken != "" {
-			toSave[i].ApiToken, _ = vMgr.EncryptSecret(toSave[i].ApiToken)
+			enc, err := vMgr.EncryptSecret(toSave[i].ApiToken)
+			if err != nil {
+				return fmt.Errorf("ошибка шифрования API-токена: %w", err)
+			}
+			toSave[i].ApiToken = enc
 		}
 		if toSave[i].NodeSecret != "" {
-			toSave[i].NodeSecret, _ = vMgr.EncryptSecret(toSave[i].NodeSecret)
+			enc, err := vMgr.EncryptSecret(toSave[i].NodeSecret)
+			if err != nil {
+				return fmt.Errorf("ошибка шифрования секрета ноды: %w", err)
+			}
+			toSave[i].NodeSecret = enc
 		}
 	}
 
@@ -529,16 +447,14 @@ func getSSHClient(server types.SavedServer) (*ssh.Client, error) {
 	var authMethods []ssh.AuthMethod
 
 	effectivePass := server.Password
-
-	if strings.HasPrefix(effectivePass, "enc:dpapi:") {
-
+	if strings.HasPrefix(effectivePass, "enc:") {
 		effectivePass = decryptSecret(effectivePass)
-
 	}
 
-
-
 	trimmedKey := strings.Trim(strings.TrimSpace(server.SSHKey), `"'`)
+	if strings.HasPrefix(trimmedKey, "enc:") {
+		trimmedKey = decryptSecret(trimmedKey)
+	}
 
 	if trimmedKey != "" {
 

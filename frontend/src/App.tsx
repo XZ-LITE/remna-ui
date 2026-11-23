@@ -1069,7 +1069,10 @@ export function App() {
       loadServers();
     };
     initApp();
+  }, []);
 
+  // Global Shortcut Ctrl+L for Quick Vault Lock
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
         if (vaultStatus?.enabled && vaultStatus?.unlocked) {
@@ -1080,7 +1083,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [vaultStatus]);
 
   const loadServers = async () => {
     setLoadingServersList(true);
@@ -3005,6 +3008,12 @@ export function App() {
       decoy_domain: editServerModal.role === "node" ? (editServerModal.decoyDomain || "") : "",
       is_external_master: editServerModal.role === "master" ? Boolean(editServerModal.isExternalMaster) : false,
       last_seen: server.last_seen || "Только что добавлен",
+      admin_password: server.admin_password || "",
+      sub_url: server.sub_url || "",
+      port_mode: server.port_mode || "",
+      xray_core_type: server.xray_core_type || "",
+      api_token: server.api_token || "",
+      node_secret: server.node_secret || "",
     });
 
 
