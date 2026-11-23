@@ -23,6 +23,7 @@ import {
   MapPin,
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { PasswordInput } from "../ui/PasswordInput";
 
 export interface EditServerData {
   server: types.SavedServer;
@@ -62,7 +63,6 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
   onTestSSH,
   onCheckIPBlock,
 }) => {
-  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [testingSSH, setTestingSSH] = useState<boolean>(false);
   const [sshTestResult, setSshTestResult] = useState<types.SSHTestResult | null>(null);
   const [checkingIP, setCheckingIP] = useState<boolean>(false);
@@ -392,34 +392,14 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
             {data.authMethod === "password" ? (
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Пароль root / sudo</label>
-                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    className="win-textbox"
-                    style={{ width: "100%", paddingRight: "36px" }}
-                    value={data.password || ""}
-                    onChange={(e) => {
-                      onChange({ ...data, password: e.target.value });
-                      setSshTestResult(null);
-                    }}
-                    placeholder="Введите пароль (будет сохранен в защищенном виде)"
-                  />
-                  <button
-                    type="button"
-                    className="win-button"
-                    style={{
-                      position: "absolute",
-                      right: "4px",
-                      height: "24px",
-                      width: "28px",
-                      padding: 0,
-                    }}
-                    onClick={() => setShowPassword(!showPassword)}
-                    title={showPassword ? "Скрыть пароль" : "Показать пароль"}
-                  >
-                    {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
-                  </button>
-                </div>
+                <PasswordInput
+                  value={data.password || ""}
+                  onChange={(e) => {
+                    onChange({ ...data, password: e.target.value });
+                    setSshTestResult(null);
+                  }}
+                  placeholder="Введите пароль (будет сохранен в защищенном виде)"
+                />
               </div>
             ) : (
               <div className="form-group" style={{ margin: 0 }}>

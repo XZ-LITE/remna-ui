@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Lock, Eye, EyeOff, ShieldCheck, KeyRound, AlertCircle, RefreshCw } from "lucide-react";
+import { Lock, ShieldCheck, KeyRound, AlertCircle, RefreshCw } from "lucide-react";
+import { PasswordInput } from "../ui/PasswordInput";
 
 interface VaultUnlockModalProps {
   isOpen: boolean;
@@ -13,7 +14,6 @@ export const VaultUnlockModal: React.FC<VaultUnlockModalProps> = ({
   onToast,
 }) => {
   const [password, setPassword] = useState<string>("");
-  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -95,47 +95,20 @@ export const VaultUnlockModal: React.FC<VaultUnlockModalProps> = ({
         </p>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ position: "relative", marginBottom: "14px", display: "flex", alignItems: "center" }}>
-            <div
-              style={{
-                position: "absolute",
-                left: "12px",
-                color: "var(--win-text-tertiary)",
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              <KeyRound size={16} />
-            </div>
-            <input
+          <div style={{ marginBottom: "14px" }}>
+            <PasswordInput
               ref={inputRef}
-              type={showPassword ? "text" : "password"}
-              className="win-textbox"
-              style={{
-                width: "100%",
-                paddingLeft: "36px",
-                paddingRight: "40px",
-                height: "38px",
-                fontSize: "13px",
-                fontFamily: showPassword ? "monospace" : "inherit",
-              }}
-              placeholder="Мастер-пароль хранилища"
+              leftIcon={<KeyRound size={16} />}
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
                 if (error) setError("");
               }}
+              placeholder="Мастер-пароль хранилища"
               disabled={loading}
+              autoFocus
+              style={{ height: "38px", fontSize: "13px" }}
             />
-            <button
-              type="button"
-              className="table-action-btn"
-              style={{ position: "absolute", right: "8px" }}
-              onClick={() => setShowPassword(!showPassword)}
-              title={showPassword ? "Скрыть пароль" : "Показать пароль"}
-            >
-              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
           </div>
 
           {error && (

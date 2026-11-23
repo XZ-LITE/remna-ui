@@ -134,6 +134,7 @@ import {
 import * as AppBindings from "../bindings/remna-ui/app";
 import * as types from "../bindings/remna-ui/internal/types/models";
 import { ServerCard } from "./components/servers/ServerCard";
+import { PasswordInput } from "./components/ui/PasswordInput";
 import { Events } from "@wailsio/runtime";
 
 const {
@@ -425,9 +426,6 @@ export function App() {
   const [nodePanelUrl, setNodePanelUrl] = useState<string>(() => localStorage.getItem("rw_panel_url") || "");
 
   const [nodeApiToken, setNodeApiToken] = useState<string>(() => localStorage.getItem("rw_api_token") || "");
-
-  const [showNodeApiToken, setShowNodeApiToken] = useState<boolean>(false);
-
   const [nodeName, setNodeName] = useState<string>("DE - Frankfurt #1");
 
   const [nodeCountry, setNodeCountry] = useState<string>("DE");
@@ -458,9 +456,6 @@ export function App() {
   const [useCloudflareDns, setUseCloudflareDns] = useState<boolean>(false);
 
   const [cloudflareToken, setCloudflareToken] = useState<string>("");
-
-  const [showCloudflareToken, setShowCloudflareToken] = useState<boolean>(false);
-
   const [outDir, setOutDir] = useState<string>("./out");
 
 
@@ -489,8 +484,6 @@ export function App() {
   const [adminCreationMode, setAdminCreationMode] = useState<"auto" | "custom" | "manual">("auto");
   const [adminUsername, setAdminUsername] = useState<string>("admin");
   const [adminPassword, setAdminPassword] = useState<string>("");
-  const [showAdminPassword, setShowAdminPassword] = useState<boolean>(false);
-
   const [customPanelIp, setCustomPanelIp] = useState<string>("");
 
   const [auditModal, setAuditModal] = useState<{
@@ -3999,59 +3992,12 @@ export function App() {
 
                                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
 
-                                    <div style={{ position: "relative" }}>
-
-                                      <input
-
-                                        type={showNodeApiToken ? "text" : "password"}
-
-                                        className="win-textbox"
-
-                                        placeholder="rw_live_..."
-
-                                        style={{ width: "220px", paddingRight: "32px" }}
-
-                                        value={nodeApiToken}
-
-                                        onChange={(e) => setNodeApiToken(e.target.value.trim())}
-
-                                      />
-
-                                      <button
-
-                                        type="button"
-
-                                        style={{
-
-                                          position: "absolute",
-
-                                          right: "8px",
-
-                                          top: "50%",
-
-                                          transform: "translateY(-50%)",
-
-                                          background: "none",
-
-                                          border: "none",
-
-                                          cursor: "pointer",
-
-                                          color: "var(--win-text-secondary)",
-
-                                        }}
-
-                                        onClick={() => setShowNodeApiToken(!showNodeApiToken)}
-
-                                        title={showNodeApiToken ? "Скрыть токен" : "Показать токен"}
-
-                                      >
-
-                                        {showNodeApiToken ? <EyeOff size={13} /> : <Eye size={13} />}
-
-                                      </button>
-
-                                    </div>
+                                    <PasswordInput
+                                      placeholder="rw_live_..."
+                                      style={{ width: "220px" }}
+                                      value={nodeApiToken}
+                                      onChange={(e) => setNodeApiToken(e.target.value.trim())}
+                                    />
 
                                     <button
 
@@ -5050,34 +4996,24 @@ export function App() {
                                       <div style={{ width: "160px", fontSize: "12px", color: "var(--win-text-secondary)" }}>
                                         Пароль администратора:
                                       </div>
-                                      <div style={{ position: "relative", width: "320px", display: "flex", alignItems: "center" }}>
-                                        <input
-                                          type={showAdminPassword ? "text" : "password"}
-                                          className="win-textbox"
-                                          style={{ width: "100%", paddingRight: "70px", fontFamily: showAdminPassword ? "monospace" : "inherit" }}
-                                          value={adminPassword}
-                                          onChange={(e) => setAdminPassword(e.target.value)}
-                                          placeholder="Минимум 24 символа (Aa1...)"
-                                        />
-                                        <div style={{ position: "absolute", right: "6px", display: "flex", gap: "4px" }}>
+                                      <PasswordInput
+                                        style={{ width: "320px" }}
+                                        value={adminPassword}
+                                        onChange={(e) => setAdminPassword(e.target.value)}
+                                        placeholder="Минимум 24 символа (Aa1...)"
+                                        extraAction={
                                           <button
                                             type="button"
-                                            className="table-action-btn"
-                                            onClick={() => setShowAdminPassword(!showAdminPassword)}
-                                            title={showAdminPassword ? "Скрыть пароль" : "Показать пароль"}
-                                          >
-                                            {showAdminPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="table-action-btn"
+                                            tabIndex={-1}
+                                            className="win-password-toggle"
+                                            onMouseDown={(e) => e.preventDefault()}
                                             onClick={generateClientSafePassword}
                                             title="Сгенерировать надежный пароль"
                                           >
                                             <Dices size={14} />
                                           </button>
-                                        </div>
-                                      </div>
+                                        }
+                                      />
                                     </div>
                                     <div style={{ fontSize: "11px", color: "var(--win-text-secondary)", marginTop: "2px" }}>
                                       Требование безопасности Remnawave: длина не менее 24 символов, обязательное наличие заглавных букв, строчных букв и цифр.
@@ -5427,61 +5363,12 @@ export function App() {
                                 <div style={{ padding: "12px 16px", background: "var(--win-fill-card-secondary)", borderTop: "1px solid var(--win-stroke-card)", display: "flex", flexDirection: "column", gap: "6px" }}>
 
                                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-
-                                    <div style={{ position: "relative", flex: 1 }}>
-
-                                      <input
-
-                                        type={showCloudflareToken ? "text" : "password"}
-
-                                        className="win-textbox"
-
-                                        placeholder="Cloudflare API Token (Zone:DNS:Edit)"
-
-                                        style={{ width: "100%", paddingRight: "36px" }}
-
-                                        value={cloudflareToken}
-
-                                        onChange={(e) => setCloudflareToken(e.target.value.trim())}
-
-                                      />
-
-                                      <button
-
-                                        type="button"
-
-                                        style={{
-
-                                          position: "absolute",
-
-                                          right: "8px",
-
-                                          top: "50%",
-
-                                          transform: "translateY(-50%)",
-
-                                          background: "none",
-
-                                          border: "none",
-
-                                          cursor: "pointer",
-
-                                          color: "var(--win-text-secondary)",
-
-                                        }}
-
-                                        onClick={() => setShowCloudflareToken(!showCloudflareToken)}
-
-                                        title={showCloudflareToken ? "Скрыть токен" : "Показать токен"}
-
-                                      >
-
-                                        {showCloudflareToken ? <EyeOff size={14} /> : <Eye size={14} />}
-
-                                      </button>
-
-                                    </div>
-
+                                    <PasswordInput
+                                      placeholder="Cloudflare API Token (Zone:DNS:Edit)"
+                                      style={{ flex: 1 }}
+                                      value={cloudflareToken}
+                                      onChange={(e) => setCloudflareToken(e.target.value.trim())}
+                                    />
                                   </div>
 
                                   <span style={{ fontSize: "11px", color: "var(--win-text-tertiary)" }}>
@@ -5715,20 +5602,10 @@ export function App() {
 
                                 <div className="hw-spec-label">Пароль root</div>
 
-                                <input
-
-                                  type="password"
-
-                                  className="win-textbox"
-
-                                  style={{ width: "100%" }}
-
+                                <PasswordInput
                                   placeholder="Пароль root"
-
                                   value={sshPass}
-
                                   onChange={(e) => setSshPass(e.target.value)}
-
                                 />
 
                               </div>
