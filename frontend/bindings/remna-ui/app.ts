@@ -268,6 +268,54 @@ export function UpdateStackImages(server: types$0.SavedServer): $CancellableProm
     });
 }
 
+export function GetVaultStatus(): $CancellablePromise<types$0.VaultStatus> {
+    return $Call.ByName("main.App.GetVaultStatus").then(($result: any) => {
+        return types$0.VaultStatus.createFrom($result);
+    });
+}
+
+export function UnlockVault(password: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByName("main.App.UnlockVault", password).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function LockVault(): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByName("main.App.LockVault").then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function SetMasterPassword(oldPass: string, newPass: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByName("main.App.SetMasterPassword", oldPass, newPass).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function DisableMasterPassword(currentPass: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByName("main.App.DisableMasterPassword", currentPass).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function SetAutoLockMinutes(mins: number): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByName("main.App.SetAutoLockMinutes", mins).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function SetSecureValue(key: string, value: string): $CancellablePromise<types$0.CommandResult> {
+    return $Call.ByName("main.App.SetSecureValue", key, value).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function GetSecureValue(key: string): $CancellablePromise<string> {
+    return $Call.ByName("main.App.GetSecureValue", key).then(($result: any) => {
+        return String($result || "");
+    });
+}
+
 // Private type creation functions
 const $$createType0 = types$0.CommandResult.createFrom;
 const $$createType1 = types$0.NodeSecurityAudit.createFrom;

@@ -90,6 +90,17 @@ type SavedServer struct {
 	SubURL           string `json:"sub_url"`
 	PortMode         string `json:"port_mode"`
 	XrayCoreType     string `json:"xray_core_type"`
+	ApiToken         string `json:"api_token,omitempty"`
+	NodeSecret       string `json:"node_secret,omitempty"`
+}
+
+type VaultStatus struct {
+	Enabled         bool   `json:"enabled"`
+	Unlocked        bool   `json:"unlocked"`
+	Mode            string `json:"mode"` // "dpapi" or "master_password"
+	AutoLockMinutes int    `json:"auto_lock_minutes"`
+	HasSavedServers bool   `json:"has_saved_servers"`
+	Message         string `json:"message,omitempty"`
 }
 
 type ContainerInfo struct {

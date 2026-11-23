@@ -1,0 +1,196 @@
+import React, { useState, useEffect, useRef } from "react";
+import { Lock, Eye, EyeOff, ShieldCheck, KeyRound, AlertCircle, RefreshCw } from "lucide-react";
+
+interface VaultUnlockModalProps {
+  isOpen: boolean;
+  onUnlock: (password: string) => Promise<boolean>;
+  onToast: (type: "success" | "error" | "info", msg: string) => void;
+}
+
+export const VaultUnlockModal: React.FC<VaultUnlockModalProps> = ({
+  isOpen,
+  onUnlock,
+  onToast,
+}) => {
+  const [password, setPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setPassword("");
+      setError("");
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!password) {
+      setError("Введите мастер-пароль");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const ok = await onUnlock(password);
+      if (ok) {
+        onToast("success", "Хранилище успешно разблокировано");
+        setPassword("");
+      } else {
+        setError("Неверный мастер-пароль. Попробуйте снова.");
+        inputRef.current?.focus();
+      }
+    } catch (err: any) {
+      setError(err?.message || "Ошибка проверки мастер-пароля");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="win-modal-backdrop" style={{ zIndex: 10000 }}>
+      <div
+        className="win-modal-dialog"
+        style={{
+          maxWidth: "460px",
+          width: "100%",
+          padding: "24px",
+          textAlign: "center",
+          borderRadius: "12px",
+          background: "var(--win-bg-card)",
+          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.45)",
+          border: "1px solid var(--win-stroke-card)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            width: "56px",
+            height: "56px",
+            borderRadius: "50%",
+            background: "rgba(59, 130, 246, 0.12)",
+            color: "var(--win-accent)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 16px",
+            border: "1px solid rgba(59, 130, 246, 0.25)",
+          }}
+        >
+          <Lock size={26} />
+        </div>
+
+        <h3 style={{ margin: "0 0 6px", fontSize: "18px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+          Хранилище заблокировано
+        </h3>
+        <p style={{ margin: "0 0 20px", fontSize: "12.5px", color: "var(--win-text-secondary)", lineHeight: "1.5" }}>
+          База серверов и учетных данных зашифрована. Введите мастер-пароль для разблокировки сессии.
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ position: "relative", marginBottom: "14px", display: "flex", alignItems: "center" }}>
+            <div
+              style={{
+                position: "absolute",
+                left: "12px",
+                color: "var(--win-text-tertiary)",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <KeyRound size={16} />
+            </div>
+            <input
+              ref={inputRef}
+              type={showPassword ? "text" : "password"}
+              className="win-textbox"
+              style={{
+                width: "100%",
+                paddingLeft: "36px",
+                paddingRight: "40px",
+                height: "38px",
+                fontSize: "13px",
+                fontFamily: showPassword ? "monospace" : "inherit",
+              }}
+              placeholder="Мастер-пароль хранилища"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (error) setError("");
+              }}
+              disabled={loading}
+            />
+            <button
+              type="button"
+              className="table-action-btn"
+              style={{ position: "absolute", right: "8px" }}
+              onClick={() => setShowPassword(!showPassword)}
+              title={showPassword ? "Скрыть пароль" : "Показать пароль"}
+            >
+              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+
+          {error && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                color: "#ef4444",
+                fontSize: "12px",
+                marginBottom: "14px",
+                justifyContent: "center",
+              }}
+            >
+              <AlertCircle size={14} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <button
+              type="submit"
+              className="win-button primary"
+              style={{ width: "100%", height: "36px", fontSize: "13px", fontWeight: 600, justifyContent: "center" }}
+              disabled={loading || !password}
+            >
+              {loading ? (
+                <>
+                  <RefreshCw size={14} className="spin" />
+                  <span>Проверка Argon2id...</span>
+                </>
+              ) : (
+                <span>Разблокировать хранилище</span>
+              )}
+            </button>
+          </div>
+        </form>
+
+        <div
+          style={{
+            marginTop: "20px",
+            paddingTop: "14px",
+            borderTop: "1px solid var(--win-stroke-card)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            fontSize: "11px",
+            color: "var(--win-text-tertiary)",
+          }}
+        >
+          <ShieldCheck size={13} style={{ color: "var(--win-accent)" }} />
+          <span>Защита AES-256-GCM + Argon2id (Zero-Knowledge)</span>
+        </div>
+      </div>
+    </div>
+  );
+};

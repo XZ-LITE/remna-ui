@@ -311,3 +311,56 @@ func (a *App) UninstallStack(server types.SavedServer, purgeData bool) types.Com
 func (a *App) CheckAppUpdate(repo string) types.AppUpdateInfo {
 	return admin.CheckAppUpdate(repo)
 }
+
+func (a *App) GetVaultStatus() types.VaultStatus {
+	return admin.GetVaultStatus()
+}
+
+func (a *App) UnlockVault(password string) types.CommandResult {
+	ok, err := admin.UnlockVault(password)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: err.Error()}
+	}
+	return types.CommandResult{Success: ok}
+}
+
+func (a *App) LockVault() types.CommandResult {
+	admin.LockVault()
+	return types.CommandResult{Success: true}
+}
+
+func (a *App) SetMasterPassword(oldPass, newPass string) types.CommandResult {
+	err := admin.SetMasterPassword(oldPass, newPass)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: err.Error()}
+	}
+	return types.CommandResult{Success: true}
+}
+
+func (a *App) DisableMasterPassword(currentPass string) types.CommandResult {
+	err := admin.DisableMasterPassword(currentPass)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: err.Error()}
+	}
+	return types.CommandResult{Success: true}
+}
+
+func (a *App) SetAutoLockMinutes(mins int) types.CommandResult {
+	err := admin.SetAutoLockMinutes(mins)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: err.Error()}
+	}
+	return types.CommandResult{Success: true}
+}
+
+func (a *App) SetSecureValue(key, value string) types.CommandResult {
+	err := admin.SetSecureValue(key, value)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: err.Error()}
+	}
+	return types.CommandResult{Success: true}
+}
+
+func (a *App) GetSecureValue(key string) string {
+	return admin.GetSecureValue(key)
+}

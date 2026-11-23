@@ -27,6 +27,8 @@ import {
   Globe,
 
   Lock,
+  Unlock,
+  KeyRound,
 
   ChevronRight,
   ChevronDown,
@@ -178,6 +180,14 @@ const {
   UninstallStack,
   CheckAppUpdate,
   ResetCircuitBreaker,
+  GetVaultStatus,
+  UnlockVault,
+  LockVault,
+  SetMasterPassword,
+  DisableMasterPassword,
+  SetAutoLockMinutes,
+  SetSecureValue,
+  GetSecureValue,
 } = AppBindings;
 
 const EventsOn = (eventName: string, callback: (...args: any[]) => void) => {
@@ -190,17 +200,14 @@ const EventsOff = (eventName: string) => {
 };
 
 import { InspectLogsModal } from "./components/modals/InspectLogsModal";
-
 import { NodeSecretModal } from "./components/modals/NodeSecretModal";
-
 import { EditServerModal, EditServerData } from "./components/modals/EditServerModal";
-
 import { RestoreBackupModal } from "./components/modals/RestoreBackupModal";
-
 import { AntiProbingAuditModal } from "./components/modals/AntiProbingAuditModal";
-
 import { IPBlockModal } from "./components/modals/IPBlockModal";
 import { VPNProbeModal } from "./components/modals/VPNProbeModal";
+import { VaultUnlockModal } from "./components/modals/VaultUnlockModal";
+import { VaultSettingsModal } from "./components/modals/VaultSettingsModal";
 
 import { SettingsCard } from "./components/ui/SettingsCard";
 
@@ -533,6 +540,11 @@ export function App() {
 
   // Clean Disk Loading State per Server
   const [cleaningDiskServerId, setCleaningDiskServerId] = useState<string | null>(null);
+
+  // Local Secrets & Vault Master Password State
+  const [vaultStatus, setVaultStatus] = useState<types.VaultStatus | null>(null);
+  const [vaultUnlockOpen, setVaultUnlockOpen] = useState<boolean>(false);
+  const [vaultSettingsOpen, setVaultSettingsOpen] = useState<boolean>(false);
 
 
 
@@ -963,49 +975,131 @@ export function App() {
 
 
 
-  // Load Saved Servers
-
-  useEffect(() => {
-
-    loadServers();
-
+  // Vault Management Handlers
+  const checkVaultStatus = useCallback(async () => {
+    try {
+      const st = await GetVaultStatus();
+      setVaultStatus(st);
+      if (st.enabled && !st.unlocked) {
+        setVaultUnlockOpen(true);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error("Vault status check error:", e);
+      return true;
+    }
   }, []);
 
+  const handleUnlockVaultAction = async (password: string): Promise<boolean> => {
+    try {
+      const res = await UnlockVault(password);
+      if (res.success) {
+        setVaultUnlockOpen(false);
+        const st = await GetVaultStatus();
+        setVaultStatus(st);
+        await loadServers();
 
+        // Migrate legacy localStorage tokens if present
+        const localToken = localStorage.getItem("rw_api_token");
+        if (localToken) {
+          await SetSecureValue("rw_api_token", localToken);
+          localStorage.removeItem("rw_api_token");
+        }
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleLockVaultAction = async () => {
+    try {
+      await LockVault();
+      const st = await GetVaultStatus();
+      setVaultStatus(st);
+      setVaultUnlockOpen(true);
+      await loadServers();
+      addToast("info", "Хранилище заблокировано");
+    } catch (err: any) {
+      addToast("error", `Ошибка блокировки: ${err?.message || err}`);
+    }
+  };
+
+  const handleSetMasterPasswordAction = async (oldPass: string, newPass: string): Promise<boolean> => {
+    const res = await SetMasterPassword(oldPass, newPass);
+    if (res.success) {
+      await checkVaultStatus();
+      await loadServers();
+      return true;
+    }
+    throw new Error(res.error || "Не удалось установить мастер-пароль");
+  };
+
+  const handleDisableMasterPasswordAction = async (currentPass: string): Promise<boolean> => {
+    const res = await DisableMasterPassword(currentPass);
+    if (res.success) {
+      await checkVaultStatus();
+      await loadServers();
+      return true;
+    }
+    throw new Error(res.error || "Не удалось отключить мастер-пароль");
+  };
+
+  const handleSetAutoLockMinutesAction = async (mins: number): Promise<boolean> => {
+    const res = await SetAutoLockMinutes(mins);
+    if (res.success) {
+      await checkVaultStatus();
+      return true;
+    }
+    return false;
+  };
+
+  // Load Saved Servers & Check Vault on Mount
+  useEffect(() => {
+    const initApp = async () => {
+      const isUnlocked = await checkVaultStatus();
+      if (isUnlocked) {
+        const secToken = await GetSecureValue("rw_api_token");
+        if (secToken && !nodeApiToken) {
+          setNodeApiToken(secToken);
+        }
+      }
+      loadServers();
+    };
+    initApp();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
+        if (vaultStatus?.enabled && vaultStatus?.unlocked) {
+          e.preventDefault();
+          handleLockVaultAction();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const loadServers = async () => {
-
     setLoadingServersList(true);
-
     try {
-
       const list = await GetServers();
-        setSavedServers(list || []);
+      setSavedServers(list || []);
 
       // If we have servers, auto-open the servers dashboard and poll status
-
       if (list && list.length > 0) {
-
         setActiveTab("servers");
-
         if (Object.keys(serverStatus).length === 0) {
-
           handleInspectServer(list[0]);
-
         }
-
       }
-
     } catch (e) {
-
       console.error(e);
-
     } finally {
-
       setLoadingServersList(false);
-
     }
-
   };
 
 
@@ -3152,6 +3246,25 @@ export function App() {
 
           <div
             className="nav-item"
+            title="Безопасность локальных секретов"
+            onClick={() => setVaultSettingsOpen(true)}
+          >
+            <span className="nav-item-icon">
+              {vaultStatus?.enabled ? (
+                vaultStatus.unlocked ? (
+                  <KeyRound size={15} style={{ color: "var(--win-accent-primary)" }} />
+                ) : (
+                  <Lock size={15} style={{ color: "#ef4444" }} />
+                )
+              ) : (
+                <ShieldCheck size={15} style={{ color: "#10b981" }} />
+              )}
+            </span>
+            <span>Безопасность</span>
+          </div>
+
+          <div
+            className="nav-item"
             title="Официальная документация Remnawave"
             onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
           >
@@ -3198,6 +3311,54 @@ export function App() {
 
 
           <div className="win-commandbar-right">
+
+            {/* Vault Lock / Security Status */}
+            {vaultStatus?.enabled ? (
+              vaultStatus?.unlocked ? (
+                <>
+                  <button
+                    type="button"
+                    className="win-commandbar-btn"
+                    title="Заблокировать хранилище паролей (Ctrl+L)"
+                    onClick={handleLockVaultAction}
+                  >
+                    <Lock size={14} style={{ color: "var(--win-accent-primary)" }} />
+                    <span>Заблокировать</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="win-commandbar-btn"
+                    title="Настройки мастер-пароля и безопасности"
+                    onClick={() => setVaultSettingsOpen(true)}
+                  >
+                    <KeyRound size={14} />
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="win-commandbar-btn"
+                  title="Хранилище заблокировано. Нажмите для ввода мастер-пароля"
+                  style={{ background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.25)" }}
+                  onClick={() => setVaultUnlockOpen(true)}
+                >
+                  <Lock size={14} style={{ color: "#ef4444" }} />
+                  <span style={{ color: "#ef4444", fontWeight: 600 }}>Заблокировано</span>
+                </button>
+              )
+            ) : (
+              <button
+                type="button"
+                className="win-commandbar-btn"
+                title="Безопасность: данные защищены Windows DPAPI. Нажмите для настройки мастер-пароля"
+                onClick={() => setVaultSettingsOpen(true)}
+              >
+                <ShieldCheck size={14} style={{ color: "#10b981" }} />
+                <span>Безопасность</span>
+              </button>
+            )}
+
+            <div className="win-commandbar-divider" />
 
             <button
 
@@ -8588,14 +8749,33 @@ export function App() {
                   <div className="settings-card-row">
                     <div className="settings-card-info">
                       <div className="settings-card-icon">
-                        <Key size={18} />
+                        {vaultStatus?.enabled ? (
+                          <Lock size={18} style={{ color: "var(--win-accent-primary)" }} />
+                        ) : (
+                          <ShieldCheck size={18} style={{ color: "#10b981" }} />
+                        )}
                       </div>
                       <div className="settings-card-text">
-                        <div className="settings-card-title">Аппаратное шифрование секретов</div>
+                        <div className="settings-card-title">
+                          Шифрование локальных секретов: {vaultStatus?.enabled ? "Мастер-пароль (Argon2id + AES-256-GCM)" : "Windows DPAPI (CryptProtectData)"}
+                        </div>
                         <div className="settings-card-desc">
-                          Пароли серверов и ключи защищены системным шифрованием Windows DPAPI (CryptProtectData).
+                          {vaultStatus?.enabled
+                            ? `База серверов и API-токены зашифрованы мастер-паролем. Автоблокировка: ${vaultStatus.auto_lock_minutes > 0 ? `${vaultStatus.auto_lock_minutes} мин.` : "отключена"}.`
+                            : "Пароли серверов, ключи и токены защищены системным аппаратным шифрованием Windows DPAPI."}
                         </div>
                       </div>
+                    </div>
+                    <div className="settings-card-action">
+                      <button
+                        type="button"
+                        className="win-button"
+                        style={{ height: "28px", fontSize: "11.5px" }}
+                        onClick={() => setVaultSettingsOpen(true)}
+                      >
+                        <KeyRound size={12} />
+                        <span>Настройки защиты</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -9041,6 +9221,25 @@ export function App() {
           onRefresh={(customVless) => handleOpenVPNProbeModal(vpnProbeModal.server, customVless)}
         />
       )}
+
+      {/* Modal: Master Password Vault Unlock */}
+      <VaultUnlockModal
+        isOpen={vaultUnlockOpen}
+        onUnlock={handleUnlockVaultAction}
+        onToast={addToast}
+      />
+
+      {/* Modal: Master Password & Security Settings */}
+      <VaultSettingsModal
+        isOpen={vaultSettingsOpen}
+        vaultStatus={vaultStatus}
+        onClose={() => setVaultSettingsOpen(false)}
+        onSetMasterPassword={handleSetMasterPasswordAction}
+        onDisableMasterPassword={handleDisableMasterPasswordAction}
+        onSetAutoLockMinutes={handleSetAutoLockMinutesAction}
+        onToast={addToast}
+        onRefreshStatus={checkVaultStatus}
+      />
 
     </div>
 

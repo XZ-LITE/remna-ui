@@ -1078,6 +1078,8 @@ export class SavedServer {
     "sub_url": string;
     "port_mode": string;
     "xray_core_type": string;
+    "api_token"?: string;
+    "node_secret"?: string;
 
     /** Creates a new SavedServer instance. */
     constructor($$source: Partial<SavedServer> = {}) {
@@ -1364,6 +1366,46 @@ export class VPNProbeResult {
     static createFrom($$source: any = {}): VPNProbeResult {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new VPNProbeResult($$parsedSource as Partial<VPNProbeResult>);
+    }
+}
+
+export class VaultStatus {
+    "enabled": boolean;
+    "unlocked": boolean;
+    "mode": string;
+    "auto_lock_minutes": number;
+    "has_saved_servers": boolean;
+    "message"?: string;
+
+    /**
+     * Creates a new VaultStatus instance.
+     */
+    constructor($$source: Partial<VaultStatus> = {}) {
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("unlocked" in $$source)) {
+            this["unlocked"] = false;
+        }
+        if (!("mode" in $$source)) {
+            this["mode"] = "dpapi";
+        }
+        if (!("auto_lock_minutes" in $$source)) {
+            this["auto_lock_minutes"] = 15;
+        }
+        if (!("has_saved_servers" in $$source)) {
+            this["has_saved_servers"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new VaultStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): VaultStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new VaultStatus($$parsedSource as Partial<VaultStatus>);
     }
 }
 

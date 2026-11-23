@@ -36,6 +36,7 @@ import (
 
 	"remna-ui/internal/generator"
 	"remna-ui/internal/types"
+	"remna-ui/internal/vault"
 
 )
 
@@ -257,15 +258,44 @@ func loadServersUnlocked() []types.SavedServer {
 	if err := json.Unmarshal(data, &servers); err != nil {
 		return []types.SavedServer{}
 	}
+
+	vMgr := vault.GetManager()
+	status := vMgr.GetStatus()
+	isLocked := status.Enabled && !status.Unlocked
+
 	for i := range servers {
-		if strings.HasPrefix(servers[i].Password, "enc:dpapi:") {
-			servers[i].Password = decryptSecret(servers[i].Password)
+		if isLocked {
+			servers[i].Password = "••••••••"
+			servers[i].AdminPassword = "••••••••"
+			servers[i].SSHKey = "••••••••"
+			servers[i].ApiToken = "••••••••"
+			servers[i].NodeSecret = "••••••••"
+			continue
 		}
-		if strings.HasPrefix(servers[i].AdminPassword, "enc:dpapi:") {
-			servers[i].AdminPassword = decryptSecret(servers[i].AdminPassword)
+		if servers[i].Password != "" {
+			if dec, err := vMgr.DecryptSecret(servers[i].Password); err == nil {
+				servers[i].Password = dec
+			}
 		}
-		if strings.HasPrefix(servers[i].SSHKey, "enc:dpapi:") {
-			servers[i].SSHKey = decryptSecret(servers[i].SSHKey)
+		if servers[i].AdminPassword != "" {
+			if dec, err := vMgr.DecryptSecret(servers[i].AdminPassword); err == nil {
+				servers[i].AdminPassword = dec
+			}
+		}
+		if servers[i].SSHKey != "" {
+			if dec, err := vMgr.DecryptSecret(servers[i].SSHKey); err == nil {
+				servers[i].SSHKey = dec
+			}
+		}
+		if servers[i].ApiToken != "" {
+			if dec, err := vMgr.DecryptSecret(servers[i].ApiToken); err == nil {
+				servers[i].ApiToken = dec
+			}
+		}
+		if servers[i].NodeSecret != "" {
+			if dec, err := vMgr.DecryptSecret(servers[i].NodeSecret); err == nil {
+				servers[i].NodeSecret = dec
+			}
 		}
 	}
 	return servers
@@ -278,6 +308,12 @@ func GetSavedServers() []types.SavedServer {
 }
 
 func SaveServer(server types.SavedServer) error {
+	vMgr := vault.GetManager()
+	status := vMgr.GetStatus()
+	if status.Enabled && !status.Unlocked {
+		return fmt.Errorf("хранилище заблокировано мастер-паролем")
+	}
+
 	storeMu.Lock()
 	defer storeMu.Unlock()
 
@@ -302,14 +338,20 @@ func SaveServer(server types.SavedServer) error {
 	toSave := make([]types.SavedServer, len(servers))
 	copy(toSave, servers)
 	for i := range toSave {
-		if toSave[i].Password != "" && !strings.HasPrefix(toSave[i].Password, "enc:dpapi:") {
-			toSave[i].Password = encryptSecret(toSave[i].Password)
+		if toSave[i].Password != "" {
+			toSave[i].Password, _ = vMgr.EncryptSecret(toSave[i].Password)
 		}
-		if toSave[i].AdminPassword != "" && !strings.HasPrefix(toSave[i].AdminPassword, "enc:dpapi:") {
-			toSave[i].AdminPassword = encryptSecret(toSave[i].AdminPassword)
+		if toSave[i].AdminPassword != "" {
+			toSave[i].AdminPassword, _ = vMgr.EncryptSecret(toSave[i].AdminPassword)
 		}
-		if toSave[i].SSHKey != "" && !strings.HasPrefix(toSave[i].SSHKey, "enc:dpapi:") {
-			toSave[i].SSHKey = encryptSecret(toSave[i].SSHKey)
+		if toSave[i].SSHKey != "" {
+			toSave[i].SSHKey, _ = vMgr.EncryptSecret(toSave[i].SSHKey)
+		}
+		if toSave[i].ApiToken != "" {
+			toSave[i].ApiToken, _ = vMgr.EncryptSecret(toSave[i].ApiToken)
+		}
+		if toSave[i].NodeSecret != "" {
+			toSave[i].NodeSecret, _ = vMgr.EncryptSecret(toSave[i].NodeSecret)
 		}
 	}
 
@@ -321,6 +363,12 @@ func SaveServer(server types.SavedServer) error {
 }
 
 func DeleteServer(id string) error {
+	vMgr := vault.GetManager()
+	status := vMgr.GetStatus()
+	if status.Enabled && !status.Unlocked {
+		return fmt.Errorf("хранилище заблокировано мастер-паролем")
+	}
+
 	storeMu.Lock()
 	defer storeMu.Unlock()
 
@@ -336,29 +384,124 @@ func DeleteServer(id string) error {
 	copy(toSave, filtered)
 
 	for i := range toSave {
-		if toSave[i].Password != "" && !strings.HasPrefix(toSave[i].Password, "enc:dpapi:") {
-			toSave[i].Password = encryptSecret(toSave[i].Password)
+		if toSave[i].Password != "" {
+			toSave[i].Password, _ = vMgr.EncryptSecret(toSave[i].Password)
 		}
-		if toSave[i].AdminPassword != "" && !strings.HasPrefix(toSave[i].AdminPassword, "enc:dpapi:") {
-			toSave[i].AdminPassword = encryptSecret(toSave[i].AdminPassword)
+		if toSave[i].AdminPassword != "" {
+			toSave[i].AdminPassword, _ = vMgr.EncryptSecret(toSave[i].AdminPassword)
 		}
-		if toSave[i].SSHKey != "" && !strings.HasPrefix(toSave[i].SSHKey, "enc:dpapi:") {
-			toSave[i].SSHKey = encryptSecret(toSave[i].SSHKey)
+		if toSave[i].SSHKey != "" {
+			toSave[i].SSHKey, _ = vMgr.EncryptSecret(toSave[i].SSHKey)
+		}
+		if toSave[i].ApiToken != "" {
+			toSave[i].ApiToken, _ = vMgr.EncryptSecret(toSave[i].ApiToken)
+		}
+		if toSave[i].NodeSecret != "" {
+			toSave[i].NodeSecret, _ = vMgr.EncryptSecret(toSave[i].NodeSecret)
 		}
 	}
-
-
 
 	data, err := json.MarshalIndent(toSave, "", "  ")
-
 	if err != nil {
-
 		return err
+	}
+	return os.WriteFile(getStorePath(), data, 0600)
+}
 
+// ReencryptServers re-encrypts all sensitive fields in servers.json during master password change or toggle
+func ReencryptServers(decryptOld func(string) (string, error), encryptNew func(string) (string, error)) error {
+	storeMu.Lock()
+	defer storeMu.Unlock()
+
+	path := getStorePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var servers []types.SavedServer
+	if err := json.Unmarshal(data, &servers); err != nil {
+		return nil
 	}
 
-	return os.WriteFile(getStorePath(), data, 0600)
+	reencryptField := func(val string) (string, error) {
+		if val == "" {
+			return "", nil
+		}
+		dec, err := decryptOld(val)
+		if err != nil {
+			return val, nil
+		}
+		return encryptNew(dec)
+	}
 
+	for i := range servers {
+		var err error
+		if servers[i].Password != "" {
+			if servers[i].Password, err = reencryptField(servers[i].Password); err != nil {
+				return err
+			}
+		}
+		if servers[i].AdminPassword != "" {
+			if servers[i].AdminPassword, err = reencryptField(servers[i].AdminPassword); err != nil {
+				return err
+			}
+		}
+		if servers[i].SSHKey != "" {
+			if servers[i].SSHKey, err = reencryptField(servers[i].SSHKey); err != nil {
+				return err
+			}
+		}
+		if servers[i].ApiToken != "" {
+			if servers[i].ApiToken, err = reencryptField(servers[i].ApiToken); err != nil {
+				return err
+			}
+		}
+		if servers[i].NodeSecret != "" {
+			if servers[i].NodeSecret, err = reencryptField(servers[i].NodeSecret); err != nil {
+				return err
+			}
+		}
+	}
+
+	out, err := json.MarshalIndent(servers, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0600)
+}
+
+// Vault API Functions exposed to Wails App
+func GetVaultStatus() types.VaultStatus {
+	return vault.GetManager().GetStatus()
+}
+
+func UnlockVault(password string) (bool, error) {
+	return vault.GetManager().Unlock(password)
+}
+
+func LockVault() {
+	vault.GetManager().Lock()
+}
+
+func SetMasterPassword(oldPass, newPass string) error {
+	return vault.GetManager().SetMasterPassword(oldPass, newPass, ReencryptServers)
+}
+
+func DisableMasterPassword(currentPass string) error {
+	return vault.GetManager().DisableMasterPassword(currentPass, ReencryptServers)
+}
+
+func SetAutoLockMinutes(mins int) error {
+	return vault.GetManager().SetAutoLockMinutes(mins)
+}
+
+func SetSecureValue(key, value string) error {
+	return vault.GetManager().SetSecureValue(key, value)
+}
+
+func GetSecureValue(key string) string {
+	val, _ := vault.GetManager().GetSecureValue(key)
+	return val
 }
 
 
