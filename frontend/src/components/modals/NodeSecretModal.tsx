@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Radio, Terminal as TerminalIcon, Check, Copy, X, Zap, RefreshCw, ExternalLink } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinModal } from "../ui/WinModal";
 
 interface NodeSecretModalProps {
   server: types.SavedServer;
@@ -44,9 +45,14 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
   };
 
   return (
-    <div className="win-modal-backdrop" onClick={() => !loading && onClose()}>
-      <div className="win-modal-dialog node-modal-dialog" style={{ maxWidth: "620px" }} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+    <WinModal
+      isOpen={true}
+      onClose={onClose}
+      maxWidth="620px"
+      dialogClassName="node-modal-dialog"
+      preventBackdropClose={loading}
+    >
+      {/* Header */}
         <div className="node-modal-header">
           <div className="node-modal-title-wrap">
             <div className="node-modal-icon" style={{ color: "var(--win-node-accent)" }}>
@@ -383,7 +389,6 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
             )}
           </button>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };

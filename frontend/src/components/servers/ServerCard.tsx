@@ -37,6 +37,7 @@ import {
   Lock,
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinTooltip } from "../ui/WinTooltip";
 
 const isIpAddress = (val: string) => /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test((val || "").trim());
 
@@ -340,41 +341,44 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                     </button>
                                   )
                                 ) : (
-                                  <button
-                                     className="win-button hero-primary"
-                                     style={{
-                                       background: "rgba(56, 189, 248, 0.10)",
-                                       color: "var(--win-node-accent)",
-                                       borderColor: "var(--win-node-border)",
-                                     }}
-                                     onClick={() => handleOpenAudit(srv)}
-                                    title="Запустить диагностику и аудит защиты ноды"
-                                  >
-                                    <ShieldCheck size={14} />
-                                    <span>Диагностика ноды</span>
-                                  </button>
+                                  <WinTooltip content="Запустить диагностику и аудит защиты ноды">
+                                    <button
+                                      className="win-button hero-primary"
+                                      style={{
+                                        background: "rgba(56, 189, 248, 0.10)",
+                                        color: "var(--win-node-accent)",
+                                        borderColor: "var(--win-node-border)",
+                                      }}
+                                      onClick={() => handleOpenAudit(srv)}
+                                    >
+                                      <ShieldCheck size={14} />
+                                      <span>Диагностика ноды</span>
+                                    </button>
+                                  </WinTooltip>
                                 )}
 
-                                <button
-                                  className="win-button toolbar-action-btn icon-only"
-                                  disabled={isLoading}
-                                  onClick={() => handleInspectServer(srv)}
-                                  title="Опросить состояние сервера"
-                                >
-                                  <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
-                                </button>
+                                <WinTooltip content="Опросить состояние сервера" shortcut="F5">
+                                  <button
+                                    className="win-button toolbar-action-btn icon-only"
+                                    disabled={isLoading}
+                                    onClick={() => handleInspectServer(srv)}
+                                  >
+                                    <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
+                                  </button>
+                                </WinTooltip>
 
                                 <div className="server-actions-wrapper">
-                                  <button
-                                    className={`win-button toolbar-action-btn icon-only ${activeServerMenu === srv.id ? "active" : ""}`}
-                                    title="Дополнительные действия..."
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setActiveServerMenu(activeServerMenu === srv.id ? null : srv.id);
-                                    }}
-                                  >
-                                    <MoreVertical size={14} />
-                                  </button>
+                                  <WinTooltip content="Дополнительные действия...">
+                                    <button
+                                      className={`win-button toolbar-action-btn icon-only ${activeServerMenu === srv.id ? "active" : ""}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveServerMenu(activeServerMenu === srv.id ? null : srv.id);
+                                      }}
+                                    >
+                                      <MoreVertical size={14} />
+                                    </button>
+                                  </WinTooltip>
 
                                   {activeServerMenu === srv.id && (
                                     <div

@@ -3,6 +3,7 @@ import { Lock, Unlock, ShieldCheck, KeyRound, AlertCircle, X, Check, RefreshCw }
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { PasswordInput } from "../ui/PasswordInput";
 import { WinSelect } from "../ui/WinSelect";
+import { WinModal } from "../ui/WinModal";
 
 interface VaultSettingsModalProps {
   isOpen: boolean;
@@ -118,20 +119,19 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
   };
 
   return (
-    <div className="win-modal-backdrop" onClick={() => !loading && onClose()}>
-      <div
-        className="win-modal-dialog"
-        style={{
-          maxWidth: "520px",
-          width: "100%",
-          padding: "24px",
-          borderRadius: "12px",
-          background: "var(--win-bg-card)",
-          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.45)",
-          border: "1px solid var(--win-stroke-card)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <WinModal
+      isOpen={isOpen}
+      onClose={onClose}
+      maxWidth="520px"
+      preventBackdropClose={loading}
+      dialogStyle={{
+        padding: "24px",
+        borderRadius: "12px",
+        background: "var(--win-bg-card)",
+        boxShadow: "0 20px 40px rgba(0, 0, 0, 0.45)",
+        border: "1px solid var(--win-stroke-card)",
+      }}
+    >
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -401,7 +401,6 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
             </div>
           </form>
         )}
-      </div>
-    </div>
+    </WinModal>
   );
 };

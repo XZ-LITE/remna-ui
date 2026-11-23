@@ -210,6 +210,8 @@ import { IPBlockModal } from "./components/modals/IPBlockModal";
 import { VPNProbeModal } from "./components/modals/VPNProbeModal";
 import { VaultUnlockModal } from "./components/modals/VaultUnlockModal";
 import { VaultSettingsModal } from "./components/modals/VaultSettingsModal";
+import { WinModal } from "./components/ui/WinModal";
+import { WinTooltip } from "./components/ui/WinTooltip";
 
 import { SettingsCard } from "./components/ui/SettingsCard";
 
@@ -3324,79 +3326,77 @@ export function App() {
             {vaultStatus?.enabled ? (
               vaultStatus?.unlocked ? (
                 <>
-                  <button
-                    type="button"
-                    className="win-commandbar-btn"
-                    title="Заблокировать хранилище паролей (Ctrl+L)"
-                    onClick={handleLockVaultAction}
-                  >
-                    <Lock size={14} style={{ color: "var(--win-accent-primary)" }} />
-                    <span>Заблокировать</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="win-commandbar-btn"
-                    title="Настройки мастер-пароля и безопасности"
-                    onClick={() => setVaultSettingsOpen(true)}
-                  >
-                    <KeyRound size={14} />
-                  </button>
+                  <WinTooltip content="Заблокировать хранилище паролей" shortcut="Ctrl+L">
+                    <button
+                      type="button"
+                      className="win-commandbar-btn"
+                      onClick={handleLockVaultAction}
+                    >
+                      <Lock size={14} style={{ color: "var(--win-accent-primary)" }} />
+                      <span>Заблокировать</span>
+                    </button>
+                  </WinTooltip>
+                  <WinTooltip content="Настройки мастер-пароля и безопасности">
+                    <button
+                      type="button"
+                      className="win-commandbar-btn"
+                      onClick={() => setVaultSettingsOpen(true)}
+                    >
+                      <KeyRound size={14} />
+                    </button>
+                  </WinTooltip>
                 </>
               ) : (
+                <WinTooltip content="Хранилище заблокировано. Нажмите для ввода мастер-пароля">
+                  <button
+                    type="button"
+                    className="win-commandbar-btn"
+                    style={{ background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.25)" }}
+                    onClick={() => setVaultUnlockOpen(true)}
+                  >
+                    <Lock size={14} style={{ color: "#ef4444" }} />
+                    <span style={{ color: "#ef4444", fontWeight: 600 }}>Заблокировано</span>
+                  </button>
+                </WinTooltip>
+              )
+            ) : (
+              <WinTooltip content="Безопасность: данные защищены Windows DPAPI. Нажмите для настройки">
                 <button
                   type="button"
                   className="win-commandbar-btn"
-                  title="Хранилище заблокировано. Нажмите для ввода мастер-пароля"
-                  style={{ background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.25)" }}
-                  onClick={() => setVaultUnlockOpen(true)}
+                  onClick={() => setVaultSettingsOpen(true)}
                 >
-                  <Lock size={14} style={{ color: "#ef4444" }} />
-                  <span style={{ color: "#ef4444", fontWeight: 600 }}>Заблокировано</span>
+                  <ShieldCheck size={14} style={{ color: "#10b981" }} />
+                  <span>Безопасность</span>
                 </button>
-              )
-            ) : (
-              <button
-                type="button"
-                className="win-commandbar-btn"
-                title="Безопасность: данные защищены Windows DPAPI. Нажмите для настройки мастер-пароля"
-                onClick={() => setVaultSettingsOpen(true)}
-              >
-                <ShieldCheck size={14} style={{ color: "#10b981" }} />
-                <span>Безопасность</span>
-              </button>
+              </WinTooltip>
             )}
 
             <div className="win-commandbar-divider" />
 
-            <button
-
-              type="button"
-
-              className="win-commandbar-btn"
-
-              title={theme === "dark" ? "Переключить на светлую тему" : "Переключить на тёмную тему"}
-
-              onClick={toggleTheme}
-
-            >
-
-              {theme === "dark" ? <Sun size={15} style={{ color: "#fbbf24" }} /> : <Moon size={15} style={{ color: "#818cf8" }} />}
-
-              <span>{theme === "dark" ? "Светлая тема" : "Тёмная тема"}</span>
-
-            </button>
+            <WinTooltip content={theme === "dark" ? "Переключить на светлую тему" : "Переключить на тёмную тему"}>
+              <button
+                type="button"
+                className="win-commandbar-btn"
+                onClick={toggleTheme}
+              >
+                {theme === "dark" ? <Sun size={15} style={{ color: "#fbbf24" }} /> : <Moon size={15} style={{ color: "#818cf8" }} />}
+                <span>{theme === "dark" ? "Светлая тема" : "Тёмная тема"}</span>
+              </button>
+            </WinTooltip>
 
             <div className="win-commandbar-divider" />
 
-            <button
-              type="button"
-              className="win-commandbar-btn"
-              title="Официальная документация Remnawave"
-              onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
-            >
-              <ExternalLink size={13} />
-              <span>Документация</span>
-            </button>
+            <WinTooltip content="Официальная документация Remnawave">
+              <button
+                type="button"
+                className="win-commandbar-btn"
+                onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
+              >
+                <ExternalLink size={13} />
+                <span>Документация</span>
+              </button>
+            </WinTooltip>
 
           </div>
 
@@ -6551,37 +6551,40 @@ export function App() {
                                 onChange={(e) => setLogSearch(e.target.value)}
                               />
                               {logSearch && (
-                                <button
-                                  type="button"
-                                  className="terminal-search-clear"
-                                  onClick={() => setLogSearch("")}
-                                  title="Очистить поиск"
-                                >
-                                  <X size={11} />
-                                </button>
+                                <WinTooltip content="Очистить поиск" shortcut="Esc">
+                                  <button
+                                    type="button"
+                                    className="terminal-search-clear"
+                                    onClick={() => setLogSearch("")}
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </WinTooltip>
                               )}
                             </div>
 
                             <div className="terminal-actions">
-                              <button
-                                type="button"
-                                className="terminal-mini-btn"
-                                onClick={handleCopyLogs}
-                                title="Скопировать логи"
-                              >
-                                {copiedLogs ? <Check size={12} style={{ color: "#34d399" }} /> : <Copy size={12} />}
-                                <span>{copiedLogs ? "Скопировано" : "Копировать"}</span>
-                              </button>
+                              <WinTooltip content="Скопировать логи терминала в буфер обмена">
+                                <button
+                                  type="button"
+                                  className="terminal-mini-btn"
+                                  onClick={handleCopyLogs}
+                                >
+                                  {copiedLogs ? <Check size={12} style={{ color: "#34d399" }} /> : <Copy size={12} />}
+                                  <span>{copiedLogs ? "Скопировано" : "Копировать"}</span>
+                                </button>
+                              </WinTooltip>
 
-                              <button
-                                type="button"
-                                className="terminal-mini-btn"
-                                onClick={() => setLogs([])}
-                                title="Очистить терминал"
-                              >
-                                <RotateCcw size={12} />
-                                <span>Очистить</span>
-                              </button>
+                              <WinTooltip content="Очистить историю терминала">
+                                <button
+                                  type="button"
+                                  className="terminal-mini-btn"
+                                  onClick={() => setLogs([])}
+                                >
+                                  <RotateCcw size={12} />
+                                  <span>Очистить</span>
+                                </button>
+                              </WinTooltip>
                             </div>
                           </div>
 
@@ -6654,65 +6657,70 @@ export function App() {
                   </div>
 
                   <div className="catalog-toolbar-group">
-                    <button
-                      className="win-button"
-                      disabled={Object.values(serverLoading).some(Boolean)}
-                      onClick={handleInspectAllServers}
-                      title="Опросить состояние всех сохраненных серверов (параллельно)"
-                    >
-                      <RefreshCw size={13} className={Object.values(serverLoading).some(Boolean) ? "animate-spin" : ""} />
-                      <span>Обновить все</span>
-                    </button>
+                    <WinTooltip content="Опросить состояние всех сохраненных серверов" shortcut="Ctrl+R">
+                      <button
+                        className="win-button"
+                        disabled={Object.values(serverLoading).some(Boolean)}
+                        onClick={handleInspectAllServers}
+                      >
+                        <RefreshCw size={13} className={Object.values(serverLoading).some(Boolean) ? "animate-spin" : ""} />
+                        <span>Обновить все</span>
+                      </button>
+                    </WinTooltip>
 
-                    <button
-                      className="win-button"
-                      disabled={savedServers.length === 0}
-                      onClick={toggleAllCollapse}
-                      title={areAllCollapsed ? "Развернуть все серверные карточки" : "Свернуть все серверные карточки в компактный вид (Accordion)"}
-                    >
-                      {areAllCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
-                      <span>{areAllCollapsed ? "Развернуть все" : "Свернуть все"}</span>
-                    </button>
+                    <WinTooltip content={areAllCollapsed ? "Развернуть все серверные карточки" : "Свернуть все серверные карточки"}>
+                      <button
+                        className="win-button"
+                        disabled={savedServers.length === 0}
+                        onClick={toggleAllCollapse}
+                      >
+                        {areAllCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+                        <span>{areAllCollapsed ? "Развернуть все" : "Свернуть все"}</span>
+                      </button>
+                    </WinTooltip>
 
                     <div className="catalog-toolbar-divider" />
 
-                    <button
-                      className="win-button"
-                      onClick={() => {
-                        setEditServerModal({
-                          server: new types.SavedServer({
-                            id: "srv_" + Date.now().toString(36),
-                            label: "",
+                    <WinTooltip content="Добавить уже работающий сервер вручную в каталог" shortcut="Ctrl+N">
+                      <button
+                        className="win-button"
+                        onClick={() => {
+                          setEditServerModal({
+                            server: new types.SavedServer({
+                              id: "srv_" + Date.now().toString(36),
+                              label: "",
+                              host: "",
+                              port: 22,
+                              username: "root",
+                              web_url: "",
+                              role: "master",
+                              last_seen: "Только что добавлен",
+                            }),
+                            name: "",
                             host: "",
                             port: 22,
-                            username: "root",
-                            web_url: "",
+                            user: "root",
+                            authMethod: "password",
+                            password: "",
                             role: "master",
-                            last_seen: "Только что добавлен",
-                          }),
-                          name: "",
-                          host: "",
-                          port: 22,
-                          user: "root",
-                          authMethod: "password",
-                          password: "",
-                          role: "master",
-                          isExternalMaster: true,
-                          webUrl: "",
-                          locationCode: "",
-                          decoyDomain: "",
-                        });
-                      }}
-                      title="Добавить уже работающий сервер (Master или Node) вручную в каталог"
-                    >
-                      <Plus size={13} />
-                      <span>Добавить вручную</span>
-                    </button>
+                            isExternalMaster: true,
+                            webUrl: "",
+                            locationCode: "",
+                            decoyDomain: "",
+                          });
+                        }}
+                      >
+                        <Plus size={13} />
+                        <span>Добавить вручную</span>
+                      </button>
+                    </WinTooltip>
 
-                    <button className="win-button primary" onClick={() => setActiveTab("wizard")}>
-                      <Plus size={14} />
-                      <span>Развернуть новый сервер</span>
-                    </button>
+                    <WinTooltip content="Открыть мастер развертывания нового сервера Remnawave">
+                      <button className="win-button primary" onClick={() => setActiveTab("wizard")}>
+                        <Plus size={14} />
+                        <span>Развернуть новый сервер</span>
+                      </button>
+                    </WinTooltip>
                   </div>
                 </div>
 
@@ -7274,138 +7282,146 @@ export function App() {
       )}
       {/* Modal: Reinstall Stack */}
       {reinstallModal && (
-        <div className="win-modal-backdrop" onClick={() => setReinstallModal(null)}>
-          <div className="win-modal-dialog" style={{ maxWidth: "520px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="win-modal-header">
-              <div className="win-modal-title">
-                <RotateCcw size={16} color="var(--win-accent)" />
-                <span>Переустановка стека Remnawave</span>
-                <span style={{ fontSize: "11px", color: "var(--win-text-tertiary)" }}>
-                  ({reinstallModal.server.host})
-                </span>
-              </div>
+        <WinModal
+          isOpen={!!reinstallModal}
+          onClose={() => setReinstallModal(null)}
+          maxWidth="520px"
+        >
+          <div className="win-modal-header">
+            <div className="win-modal-title">
+              <RotateCcw size={16} color="var(--win-accent)" />
+              <span>Переустановка стека Remnawave</span>
+              <span style={{ fontSize: "11px", color: "var(--win-text-tertiary)" }}>
+                ({reinstallModal.server.host})
+              </span>
+            </div>
+            <WinTooltip content="Закрыть" shortcut="Esc">
               <button className="win-button" style={{ padding: "0 8px", height: "26px" }} onClick={() => setReinstallModal(null)}>
                 <X size={14} />
               </button>
-            </div>
-            <div className="win-modal-body" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 20px" }}>
-              <p style={{ margin: 0, fontSize: "12.5px", color: "var(--win-text-secondary)" }}>
-                Выберите подходящий вариант переустановки для сервера <strong>{reinstallModal.server.host}</strong>:
-              </p>
+            </WinTooltip>
+          </div>
+          <div className="win-modal-body" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 20px" }}>
+            <p style={{ margin: 0, fontSize: "12.5px", color: "var(--win-text-secondary)" }}>
+              Выберите подходящий вариант переустановки для сервера <strong>{reinstallModal.server.host}</strong>:
+            </p>
 
-              {/* Option 1: Soft */}
-              <div
-                style={{
-                  padding: "14px",
-                  borderRadius: "8px",
-                  background: "var(--win-fill-card-secondary)",
-                  border: "1px solid var(--win-stroke-card)",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-                onClick={() => handleReinstallSoft(reinstallModal.server)}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600, color: "var(--win-text-primary)", fontSize: "13px" }}>
-                  <Shield size={16} style={{ color: "#34d399" }} />
-                  <span>Мягкая переустановка (С сохранением базы данных)</span>
-                </div>
-                <div style={{ marginTop: "6px", fontSize: "11.5px", color: "var(--win-text-secondary)", lineHeight: 1.4 }}>
-                  Автоматически синхронизирует и перевыпускает токены служб (страницы подписок), обновляет конфигурации, загружает свежие образы и перезапускает контейнеры. База данных, клиенты и ключи будут полностью сохранены.
-                </div>
+            {/* Option 1: Soft */}
+            <div
+              style={{
+                padding: "14px",
+                borderRadius: "8px",
+                background: "var(--win-fill-card-secondary)",
+                border: "1px solid var(--win-stroke-card)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              onClick={() => handleReinstallSoft(reinstallModal.server)}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600, color: "var(--win-text-primary)", fontSize: "13px" }}>
+                <Shield size={16} style={{ color: "#34d399" }} />
+                <span>Мягкая переустановка (С сохранением базы данных)</span>
               </div>
-
-              {/* Option 2: Clean */}
-              <div
-                style={{
-                  padding: "14px",
-                  borderRadius: "8px",
-                  background: "rgba(56, 189, 248, 0.06)",
-                  border: "1px solid rgba(56, 189, 248, 0.22)",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-                onClick={() => handleReinstallClean(reinstallModal.server)}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600, color: "#60cdff", fontSize: "13px" }}>
-                  <Wand2 size={16} style={{ color: "#60cdff" }} />
-                  <span>Чистая переустановка с нуля (Мастер деплоя)</span>
-                </div>
-                <div style={{ marginTop: "6px", fontSize: "11.5px", color: "var(--win-text-secondary)", lineHeight: 1.4 }}>
-                  Удалит старый стек с сервера и откроет Мастер установки с уже заполненными SSH-реквизитами для установки на чистый VPS.
-                </div>
+              <div style={{ marginTop: "6px", fontSize: "11.5px", color: "var(--win-text-secondary)", lineHeight: 1.4 }}>
+                Автоматически синхронизирует и перевыпускает токены служб (страницы подписок), обновляет конфигурации, загружает свежие образы и перезапускает контейнеры. База данных, клиенты и ключи будут полностью сохранены.
               </div>
             </div>
-            <div className="win-modal-footer">
-              <button className="win-button" style={{ height: "28px" }} onClick={() => setReinstallModal(null)}>
-                Отмена
-              </button>
+
+            {/* Option 2: Clean */}
+            <div
+              style={{
+                padding: "14px",
+                borderRadius: "8px",
+                background: "rgba(56, 189, 248, 0.06)",
+                border: "1px solid rgba(56, 189, 248, 0.22)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              onClick={() => handleReinstallClean(reinstallModal.server)}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 600, color: "#60cdff", fontSize: "13px" }}>
+                <Wand2 size={16} style={{ color: "#60cdff" }} />
+                <span>Чистая переустановка с нуля (Мастер деплоя)</span>
+              </div>
+              <div style={{ marginTop: "6px", fontSize: "11.5px", color: "var(--win-text-secondary)", lineHeight: 1.4 }}>
+                Удалит старый стек с сервера и откроет Мастер установки с уже заполненными SSH-реквизитами для установки на чистый VPS.
+              </div>
             </div>
           </div>
-        </div>
+          <div className="win-modal-footer">
+            <button className="win-button" style={{ height: "28px" }} onClick={() => setReinstallModal(null)}>
+              Отмена
+            </button>
+          </div>
+        </WinModal>
       )}
 
       {/* Modal: Uninstall & Wipe Stack from VPS */}
       {uninstallModal && (
-        <div className="win-modal-backdrop" onClick={() => !uninstallModal.loading && setUninstallModal(null)}>
-          <div className="win-modal-dialog" style={{ maxWidth: "500px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="win-modal-header">
-              <div className="win-modal-title" style={{ color: "#fb7185" }}>
-                <AlertOctagon size={16} color="#fb7185" />
-                <span>Очистка VPS и удаление Remnawave</span>
-              </div>
-              {!uninstallModal.loading && (
+        <WinModal
+          isOpen={!!uninstallModal}
+          onClose={() => !uninstallModal.loading && setUninstallModal(null)}
+          maxWidth="500px"
+        >
+          <div className="win-modal-header">
+            <div className="win-modal-title" style={{ color: "#fb7185" }}>
+              <AlertOctagon size={16} color="#fb7185" />
+              <span>Очистка VPS и удаление Remnawave</span>
+            </div>
+            {!uninstallModal.loading && (
+              <WinTooltip content="Закрыть" shortcut="Esc">
                 <button className="win-button" style={{ padding: "0 8px", height: "26px" }} onClick={() => setUninstallModal(null)}>
                   <X size={14} />
                 </button>
-              )}
+              </WinTooltip>
+            )}
+          </div>
+          <div className="win-modal-body" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 20px" }}>
+            <div style={{ background: "rgba(244, 63, 94, 0.1)", border: "1px solid rgba(244, 63, 94, 0.25)", borderRadius: "6px", padding: "10px 12px", fontSize: "12px", color: "#fb7185", lineHeight: 1.45 }}>
+              Внимание! С сервера <strong>{uninstallModal.server.host}</strong> будут принудительно остановлены и удалены все Docker-контейнеры, каталоги /opt/remnawave и правила фаервола.
             </div>
-            <div className="win-modal-body" style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "16px 20px" }}>
-              <div style={{ background: "rgba(244, 63, 94, 0.1)", border: "1px solid rgba(244, 63, 94, 0.25)", borderRadius: "6px", padding: "10px 12px", fontSize: "12px", color: "#fb7185", lineHeight: 1.45 }}>
-                Внимание! С сервера <strong>{uninstallModal.server.host}</strong> будут принудительно остановлены и удалены все Docker-контейнеры, каталоги /opt/remnawave и правила фаервола.
-              </div>
-              <p style={{ margin: 0, fontSize: "12px", color: "var(--win-text-secondary)", lineHeight: 1.45 }}>
-                Операционная система Linux (Ubuntu/Debian) останется абсолютно чистой. Вам не придется переустанавливать ОС у хостинга.
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                <label style={{ fontSize: "12px", color: "var(--win-text-primary)", fontWeight: 500 }}>
-                  Для подтверждения введите IP/хост сервера: <code>{uninstallModal.server.host}</code>
-                </label>
-                <input
-                  type="text"
-                  className="win-input"
-                  style={{ height: "30px", fontSize: "12px" }}
-                  placeholder={uninstallModal.server.host}
-                  value={uninstallModal.confirmHost}
-                  onChange={(e) => setUninstallModal({ ...uninstallModal, confirmHost: e.target.value })}
-                  disabled={uninstallModal.loading}
-                />
-              </div>
-            </div>
-            <div className="win-modal-footer">
-              <button className="win-button" style={{ height: "28px" }} disabled={uninstallModal.loading} onClick={() => setUninstallModal(null)}>
-                Отмена
-              </button>
-              <button
-                className="win-button"
-                style={{ height: "28px", background: "#ef4444", color: "#fff", borderColor: "#dc2626", fontWeight: 600 }}
-                disabled={uninstallModal.confirmHost !== uninstallModal.server.host || uninstallModal.loading}
-                onClick={handleUninstallServer}
-              >
-                {uninstallModal.loading ? (
-                  <>
-                    <RefreshCw size={12} className="animate-spin" />
-                    <span>Очистка VPS...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={12} />
-                    <span>Очистить сервер и удалить</span>
-                  </>
-                )}
-              </button>
+            <p style={{ margin: 0, fontSize: "12.5px", color: "var(--win-text-secondary)", lineHeight: 1.45 }}>
+              Операционная система Linux (Ubuntu/Debian) останется абсолютно чистой. Вам не придется переустанавливать ОС у хостинга.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <label style={{ fontSize: "12px", color: "var(--win-text-primary)", fontWeight: 500 }}>
+                Для подтверждения введите IP/хост сервера: <code>{uninstallModal.server.host}</code>
+              </label>
+              <input
+                type="text"
+                className="win-input"
+                style={{ height: "30px", fontSize: "12px" }}
+                placeholder={uninstallModal.server.host}
+                value={uninstallModal.confirmHost}
+                onChange={(e) => setUninstallModal({ ...uninstallModal, confirmHost: e.target.value })}
+                disabled={uninstallModal.loading}
+              />
             </div>
           </div>
-        </div>
+          <div className="win-modal-footer">
+            <button className="win-button" style={{ height: "28px" }} disabled={uninstallModal.loading} onClick={() => setUninstallModal(null)}>
+              Отмена
+            </button>
+            <button
+              className="win-button"
+              style={{ height: "28px", background: "#ef4444", color: "#fff", borderColor: "#dc2626", fontWeight: 600 }}
+              disabled={uninstallModal.confirmHost !== uninstallModal.server.host || uninstallModal.loading}
+              onClick={handleUninstallServer}
+            >
+              {uninstallModal.loading ? (
+                <>
+                  <RefreshCw size={12} className="animate-spin" />
+                  <span>Очистка VPS...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 size={12} />
+                  <span>Очистить сервер и удалить</span>
+                </>
+              )}
+            </button>
+          </div>
+        </WinModal>
       )}
 
 

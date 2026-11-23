@@ -15,6 +15,7 @@ import {
   Globe,
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinModal } from "../ui/WinModal";
 
 interface IPProbeItem {
   node_id: string;
@@ -99,13 +100,14 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
   const currentPort = result?.port || server.port || 22;
 
   return (
-    <div className="win-modal-overlay" onClick={() => !loading && onClose()}>
-      <div
-        className="win-modal-content"
-        style={{ maxWidth: "600px", width: "95%" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <WinModal
+      isOpen={true}
+      onClose={onClose}
+      maxWidth="600px"
+      width="95%"
+      preventBackdropClose={loading}
+    >
+      {/* Header */}
         <div className="win-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
@@ -426,7 +428,6 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };

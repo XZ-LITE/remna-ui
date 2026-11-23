@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Terminal as TerminalIcon, Search, RotateCcw, RefreshCw, Copy, X, AlertTriangle, Wrench } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinModal } from "../ui/WinModal";
 
 interface InspectLogsModalProps {
   server: types.SavedServer;
@@ -37,9 +38,8 @@ export const InspectLogsModal: React.FC<InspectLogsModalProps> = ({
   const totalLines = useMemo(() => logs.split("\n").length, [logs]);
 
   return (
-    <div className="win-modal-backdrop" onClick={onClose}>
-      <div className="win-modal-dialog inspect-logs-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="win-modal-header">
+    <WinModal isOpen={true} onClose={onClose} dialogClassName="inspect-logs-dialog">
+      <div className="win-modal-header">
           <div className="win-modal-title">
             <TerminalIcon size={16} color="var(--win-accent)" />
             <span>Журнал контейнера: {container}</span>
@@ -125,7 +125,6 @@ export const InspectLogsModal: React.FC<InspectLogsModalProps> = ({
             Закрыть
           </button>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };

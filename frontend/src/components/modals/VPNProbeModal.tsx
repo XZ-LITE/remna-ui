@@ -15,6 +15,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinModal } from "../ui/WinModal";
 
 interface VPNProbeModalProps {
   server: {
@@ -69,13 +70,14 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
   const currentDecoy = result?.decoy_domain || server.decoy_domain || server.host;
 
   return (
-    <div className="win-modal-overlay" onClick={() => !loading && onClose()}>
-      <div
-        className="win-modal-content"
-        style={{ maxWidth: "620px", width: "95%" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <WinModal
+      isOpen={true}
+      onClose={onClose}
+      maxWidth="620px"
+      width="95%"
+      preventBackdropClose={loading}
+    >
+      {/* Header */}
         <div className="win-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
@@ -470,7 +472,6 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };

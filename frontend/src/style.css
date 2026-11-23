@@ -417,6 +417,39 @@ body {
   }
 }
 
+/* Modal exit animation */
+@keyframes modalExit {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+}
+
+/* Modal backdrop exit animation */
+@keyframes backdropFadeOut {
+  0% {
+    opacity: 1;
+    backdrop-filter: blur(16px);
+  }
+  100% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+}
+
+/* Attention wobble when clicking outside mandatory modals */
+@keyframes modalWobble {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -2848,6 +2881,12 @@ input::-webkit-credentials-auto-fill-button {
   animation: backdropFade 0.2s var(--win-ease-decelerate);
 }
 
+.win-modal-backdrop.exiting,
+.win-modal-overlay.exiting {
+  animation: backdropFadeOut 0.14s cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
 .win-modal-dialog,
 .win-modal-content {
   width: 100%;
@@ -2864,6 +2903,17 @@ input::-webkit-credentials-auto-fill-button {
   overflow: hidden;
   animation: modalEnter 0.24s var(--win-ease-decelerate);
   color: var(--win-text-primary);
+}
+
+.win-modal-dialog.exiting,
+.win-modal-content.exiting {
+  animation: modalExit 0.13s cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
+.win-modal-dialog.wobble-attention,
+.win-modal-content.wobble-attention {
+  animation: modalWobble 0.28s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 .win-modal-dialog.inspect-logs-dialog {
@@ -3035,6 +3085,89 @@ textarea.win-input {
   justify-content: space-between;
   font-size: 11.5px;
   color: var(--win-text-tertiary);
+}
+
+/* ==========================================================================
+   Fluent WinTooltip (Windows 11 Acrylic Tooltip)
+   ========================================================================== */
+
+.win-tooltip-popup {
+  position: fixed;
+  z-index: 16000;
+  pointer-events: none;
+  background: rgba(28, 32, 42, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 11.5px;
+  color: var(--win-text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  animation: tooltipEnter 0.12s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+  box-sizing: border-box;
+}
+
+:root[data-theme="light"] .win-tooltip-popup {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #1a1a1a;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.win-tooltip-popup.placement-top {
+  transform-origin: bottom center;
+}
+
+.win-tooltip-popup.placement-bottom {
+  transform-origin: top center;
+}
+
+.win-tooltip-popup.placement-left {
+  transform-origin: center right;
+}
+
+.win-tooltip-popup.placement-right {
+  transform-origin: center left;
+}
+
+@keyframes tooltipEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.win-tooltip-text {
+  line-height: 1.35;
+}
+
+.win-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: inherit;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--win-text-secondary);
+  line-height: 1.2;
+}
+
+:root[data-theme="light"] .win-kbd {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #4b5563;
 }
 
 /* ==========================================================================

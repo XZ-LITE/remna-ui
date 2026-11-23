@@ -25,6 +25,7 @@ import {
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { PasswordInput } from "../ui/PasswordInput";
 import { WinSelect } from "../ui/WinSelect";
+import { WinModal } from "../ui/WinModal";
 
 export interface EditServerData {
   server: types.SavedServer;
@@ -107,19 +108,17 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
   };
 
   return (
-    <div className="win-modal-overlay" onClick={onClose}>
-      <div
-        className="win-modal-content"
-        style={{
-          maxWidth: "600px",
-          width: "100%",
-          maxHeight: "88vh",
-          display: "flex",
-          flexDirection: "column",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
+    <WinModal
+      isOpen={true}
+      onClose={onClose}
+      maxWidth="600px"
+      maxHeight="88vh"
+      dialogStyle={{
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* Header */}
         <div className="win-modal-header" style={{ flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
@@ -655,7 +654,6 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
             <span>{isNew ? "Добавить в каталог" : "Сохранить изменения"}</span>
           </button>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };

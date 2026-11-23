@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { AlertTriangle, X, RefreshCw, RotateCcw, Database, FileText, Layers, ShieldCheck } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinModal } from "../ui/WinModal";
 
 interface RestoreBackupModalProps {
   server: types.SavedServer;
@@ -25,13 +26,14 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
   };
 
   return (
-    <div className="win-modal-overlay" onClick={() => !loading && onClose()}>
-      <div
-        className="win-modal-content"
-        style={{ maxWidth: "560px", width: "95%" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="win-modal-header">
+    <WinModal
+      isOpen={true}
+      onClose={onClose}
+      maxWidth="560px"
+      width="95%"
+      preventBackdropClose={loading}
+    >
+      <div className="win-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div className="modal-title-icon" style={{ background: "rgba(251,191,36,0.15)", color: "#fbbf24" }}>
               <RotateCcw size={18} />
@@ -222,7 +224,6 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
             <span>{loading ? "Выполняется восстановление..." : "Восстановить"}</span>
           </button>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };

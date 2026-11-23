@@ -20,6 +20,7 @@ import {
   Info,
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
+import { WinModal } from "../ui/WinModal";
 
 interface AntiProbingAuditModalProps {
   server: types.SavedServer;
@@ -81,20 +82,20 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
   const isFullyProtected = score >= 90;
 
   return (
-    <div className="win-modal-backdrop" onClick={() => !loading && !applying && onClose()}>
-      <div
-        className="win-modal-dialog"
-        style={{
-          maxWidth: "640px",
-          width: "95%",
-          maxHeight: "88vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header - Fixed at Top */}
+    <WinModal
+      isOpen={true}
+      onClose={onClose}
+      maxWidth="640px"
+      width="95%"
+      maxHeight="88vh"
+      preventBackdropClose={loading || applying}
+      dialogStyle={{
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* Header - Fixed at Top */}
         <div className="node-modal-header" style={{ flexShrink: 0, padding: "14px 18px" }}>
           <div className="node-modal-title-wrap">
             <div
@@ -638,7 +639,6 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </WinModal>
   );
 };
