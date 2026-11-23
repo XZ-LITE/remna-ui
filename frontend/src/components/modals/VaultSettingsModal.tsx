@@ -264,15 +264,26 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
                 <label style={{ fontSize: "12px", color: "var(--win-text-secondary)", display: "block", marginBottom: "4px" }}>
                   Текущий мастер-пароль:
                 </label>
-                <input
-                  type={showPass ? "text" : "password"}
-                  className="win-textbox"
-                  style={{ width: "100%" }}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Введите текущий пароль"
-                  disabled={loading}
-                />
+                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <input
+                    type={showPass ? "text" : "password"}
+                    className="win-textbox"
+                    style={{ width: "100%", paddingRight: "36px" }}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Введите текущий пароль"
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    className="table-action-btn"
+                    style={{ position: "absolute", right: "6px" }}
+                    onClick={() => setShowPass(!showPass)}
+                    title={showPass ? "Скрыть" : "Показать"}
+                  >
+                    {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -306,15 +317,26 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
               <label style={{ fontSize: "12px", color: "var(--win-text-secondary)", display: "block", marginBottom: "4px" }}>
                 Подтверждение пароля:
               </label>
-              <input
-                type={showPass ? "text" : "password"}
-                className="win-textbox"
-                style={{ width: "100%" }}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Повторите мастер-пароль"
-                disabled={loading}
-              />
+              <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                <input
+                  type={showPass ? "text" : "password"}
+                  className="win-textbox"
+                  style={{ width: "100%", paddingRight: "36px" }}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Повторите мастер-пароль"
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  className="table-action-btn"
+                  style={{ position: "absolute", right: "6px" }}
+                  onClick={() => setShowPass(!showPass)}
+                  title={showPass ? "Скрыть" : "Показать"}
+                >
+                  {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
 
             {error && (
@@ -376,16 +398,27 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
               <label style={{ fontSize: "12px", color: "var(--win-text-secondary)", display: "block", marginBottom: "4px" }}>
                 Введите текущий мастер-пароль для подтверждения:
               </label>
-              <input
-                type="password"
-                className="win-textbox"
-                style={{ width: "100%" }}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Текущий мастер-пароль"
-                disabled={loading}
-                autoFocus
-              />
+              <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                <input
+                  type={showPass ? "text" : "password"}
+                  className="win-textbox"
+                  style={{ width: "100%", paddingRight: "36px" }}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Текущий мастер-пароль"
+                  disabled={loading}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="table-action-btn"
+                  style={{ position: "absolute", right: "6px" }}
+                  onClick={() => setShowPass(!showPass)}
+                  title={showPass ? "Скрыть" : "Показать"}
+                >
+                  {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
 
             {error && (
