@@ -32,6 +32,8 @@ export const WinSelect: React.FC<WinSelectProps> = ({
   minMenuWidth,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isRendered, setIsRendered] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [menuCoords, setMenuCoords] = useState<{
     top?: number;
@@ -45,8 +47,21 @@ export const WinSelect: React.FC<WinSelectProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const closeTimeoutRef = useRef<number | null>(null);
 
   const selectedOption = options.find((o) => o.value === value);
+
+  const closeMenu = useCallback(() => {
+    setIsOpen(false);
+    setIsClosing(true);
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+    }
+    closeTimeoutRef.current = window.setTimeout(() => {
+      setIsRendered(false);
+      setIsClosing(false);
+    }, 130);
+  }, []);
 
   // Recalculate menu position relative to viewport
   const updatePosition = useCallback(() => {
@@ -55,22 +70,32 @@ export const WinSelect: React.FC<WinSelectProps> = ({
 
     // If trigger element is hidden, detached, or scrolled offscreen, close menu
     if (rect.width === 0 && rect.height === 0) {
-      setIsOpen(false);
+      closeMenu();
       return;
     }
     if (rect.bottom < 0 || rect.top > window.innerHeight) {
-      setIsOpen(false);
+      closeMenu();
       return;
     }
 
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const placement = spaceBelow < 220 && spaceAbove > spaceBelow ? "top" : "bottom";
+    // Check if bottom-action-bar exists (or modal footer) to prevent overlapping
+    let bottomBoundary = window.innerHeight;
+    const bottomBar = document.querySelector(".bottom-action-bar, .modal-footer, .win-modal-footer");
+    if (bottomBar) {
+      const bRect = bottomBar.getBoundingClientRect();
+      if (bRect.top > 0 && bRect.top < bottomBoundary) {
+        bottomBoundary = bRect.top;
+      }
+    }
 
-    // Dynamic max-height so menu never spills past the viewport edges
+    const spaceBelow = bottomBoundary - rect.bottom;
+    const spaceAbove = rect.top;
+    const placement = spaceBelow < 200 && spaceAbove > spaceBelow ? "top" : "bottom";
+
+    // Dynamic max-height so menu never spills past the viewport edges or bottom boundary
     const maxHeight = placement === "top"
-      ? Math.min(280, Math.max(100, spaceAbove - 16))
-      : Math.min(280, Math.max(100, spaceBelow - 16));
+      ? Math.min(280, Math.max(90, spaceAbove - 16))
+      : Math.min(280, Math.max(90, spaceBelow - 12));
 
     // Menu width logic: minimum is trigger width, or minMenuWidth
     let targetWidth = rect.width;
@@ -110,18 +135,19 @@ export const WinSelect: React.FC<WinSelectProps> = ({
         placement: "bottom",
       });
     }
-  }, [minMenuWidth]);
+  }, [minMenuWidth, closeMenu]);
 
   const openMenu = () => {
     if (disabled) return;
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+    }
     updatePosition();
+    setIsClosing(false);
+    setIsRendered(true);
     setIsOpen(true);
     const idx = options.findIndex((o) => o.value === value);
     setFocusedIndex(idx >= 0 ? idx : 0);
-  };
-
-  const closeMenu = () => {
-    setIsOpen(false);
   };
 
   useLayoutEffect(() => {
@@ -130,9 +156,9 @@ export const WinSelect: React.FC<WinSelectProps> = ({
     }
   }, [isOpen, updatePosition]);
 
-  // Handle position tracking, click outside, and escape key
+  // Handle click outside, escape key, and scroll
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isRendered) return;
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -142,33 +168,45 @@ export const WinSelect: React.FC<WinSelectProps> = ({
         menuRef.current &&
         !menuRef.current.contains(target)
       ) {
-        setIsOpen(false);
+        closeMenu();
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setIsOpen(false);
+        closeMenu();
         triggerRef.current?.focus();
       }
     };
 
-    const handleScrollOrResize = () => {
-      updatePosition();
+    const handleScroll = (e: Event) => {
+      // If scroll happened inside the dropdown menu itself, let user scroll the options list
+      if (menuRef.current && menuRef.current.contains(e.target as Node)) {
+        return;
+      }
+      // Any scroll of the outer page or container immediately closes the dropdown
+      closeMenu();
+    };
+
+    const handleResize = () => {
+      closeMenu();
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", handleScrollOrResize);
-    window.addEventListener("scroll", handleScrollOrResize, true);
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
 
     return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", handleScrollOrResize);
-      window.removeEventListener("scroll", handleScrollOrResize, true);
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
     };
-  }, [isOpen, updatePosition]);
+  }, [isRendered, closeMenu]);
 
   // Keep focused item visible on keyboard nav
   useEffect(() => {
@@ -182,7 +220,7 @@ export const WinSelect: React.FC<WinSelectProps> = ({
 
   const handleSelect = (val: string) => {
     onChange(val);
-    setIsOpen(false);
+    closeMenu();
     triggerRef.current?.focus();
   };
 
@@ -207,10 +245,10 @@ export const WinSelect: React.FC<WinSelectProps> = ({
     }
   };
 
-  const menuDropdown = isOpen ? (
+  const menuDropdown = isRendered ? (
     <div
       ref={menuRef}
-      className={`win-select-menu placement-${menuCoords.placement}`}
+      className={`win-select-menu placement-${menuCoords.placement} ${isClosing ? "exiting" : "entering"}`}
       role="listbox"
       style={{
         position: "fixed",
@@ -219,7 +257,7 @@ export const WinSelect: React.FC<WinSelectProps> = ({
         left: `${menuCoords.left}px`,
         width: `${menuCoords.width}px`,
         minWidth: minMenuWidth || `${menuCoords.width}px`,
-        maxHeight: menuCoords.maxHeight ? `${menuCoords.maxHeight}px` : "280px",
+        maxHeight: `${menuCoords.maxHeight}px`,
         zIndex: 15000,
       }}
     >
