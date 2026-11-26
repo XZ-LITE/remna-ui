@@ -2251,8 +2251,6 @@ input::-webkit-credentials-auto-fill-button {
 
 .server-item-card {
   background: var(--win-card-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--win-card-stroke);
   border-radius: 8px;
   overflow: visible;
@@ -2260,9 +2258,8 @@ input::-webkit-credentials-auto-fill-button {
   margin-bottom: 20px;
   box-shadow: var(--win-card-shadow);
   transition: transform 0.22s var(--win-ease-decelerate), box-shadow 0.22s var(--win-ease-decelerate), border-color 0.22s var(--win-ease-decelerate);
-  will-change: transform, box-shadow;
-  animation: cardCascadeEnter 0.28s var(--win-ease-decelerate) backwards;
-  animation-delay: calc(var(--server-index, 0) * 45ms);
+  animation: cardCascadeEnter 0.26s var(--win-ease-decelerate) backwards;
+  animation-delay: calc(min(var(--server-index, 0), 8) * 35ms);
 }
 
 .server-item-card.menu-open {

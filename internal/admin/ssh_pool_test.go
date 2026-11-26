@@ -54,3 +54,39 @@ func TestSSHPool_ConcurrentMapAccess(t *testing.T) {
 	delete(sshPool, "test-key")
 	sshPoolMu.Unlock()
 }
+
+func TestShouldSkipKeepalive(t *testing.T) {
+	now := time.Now()
+	if shouldSkipKeepalive(time.Time{}, now) {
+		t.Errorf("expected zero lastUsed not to skip keepalive")
+	}
+	if !shouldSkipKeepalive(now.Add(-3*time.Second), now) {
+		t.Errorf("expected recent connection (3s) to skip keepalive")
+	}
+	if shouldSkipKeepalive(now.Add(-12*time.Second), now) {
+		t.Errorf("expected older connection (12s) not to skip keepalive")
+	}
+}
+
+func TestParseMasterCounts(t *testing.T) {
+	cases := []struct {
+		col8          string
+		col9          string
+		wantAntiAbuse bool
+		wantNode      bool
+	}{
+		{"0|0", "", false, false},
+		{"2|0", "", true, false},
+		{"0|3", "", false, true},
+		{"1|4\n", "", true, true},
+		{"0", "2", false, true},
+		{"1", "0", true, false},
+	}
+
+	for _, tc := range cases {
+		ab, nd := parseMasterCounts(tc.col8, tc.col9)
+		if ab != tc.wantAntiAbuse || nd != tc.wantNode {
+			t.Errorf("parseMasterCounts(%q, %q) = (%v, %v), want (%v, %v)", tc.col8, tc.col9, ab, nd, tc.wantAntiAbuse, tc.wantNode)
+		}
+	}
+}

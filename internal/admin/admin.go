@@ -553,6 +553,18 @@ func init() {
 	}()
 }
 
+func parseMasterCounts(col8, col9 string) (antiAbuseActive bool, nodePresent bool) {
+	c8 := strings.TrimSpace(col8)
+	if strings.Contains(c8, "|") {
+		segs := strings.SplitN(c8, "|", 2)
+		ab := strings.TrimSpace(segs[0])
+		nd := strings.TrimSpace(segs[1])
+		return ab != "0" && ab != "", nd != "0" && nd != ""
+	}
+	c9 := strings.TrimSpace(col9)
+	return c8 != "0" && c8 != "", c9 != "0" && c9 != ""
+}
+
 func getSSHKey(server types.SavedServer) string {
 	port := server.Port
 	if port == 0 {
@@ -565,6 +577,34 @@ func getSSHKey(server types.SavedServer) string {
 	return fmt.Sprintf("%s:%d:%s", server.Host, port, user)
 }
 
+const (
+	sshKeepaliveSkipWindow = 8 * time.Second
+	sshKeepaliveTimeout    = 2 * time.Second
+)
+
+func shouldSkipKeepalive(lastUsed, now time.Time) bool {
+	return !lastUsed.IsZero() && now.Sub(lastUsed) < sshKeepaliveSkipWindow
+}
+
+func checkSSHClientAlive(client *ssh.Client, timeout time.Duration) bool {
+	if client == nil {
+		return false
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err == nil
+	case <-timer.C:
+		return false
+	}
+}
+
 // getPooledSession returns an active SSH session from a pooled, keepalive-verified SSH client,
 // along with a release function that must be deferred by the caller to return the connection to the idle pool.
 func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
@@ -574,15 +614,17 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	sshPoolMu.Lock()
 	entry, exists := sshPool[key]
 	var existingClient *ssh.Client
+	var lastUsed time.Time
 	if exists && entry != nil {
 		existingClient = entry.client
+		lastUsed = entry.lastUsed
 	}
 	sshPoolMu.Unlock()
 
 	// 2. Health check and session creation OUTSIDE of the global mutex
 	if existingClient != nil {
-		_, _, err := existingClient.SendRequest("keepalive@openssh.com", true, nil)
-		if err == nil {
+		alive := shouldSkipKeepalive(lastUsed, time.Now()) || checkSSHClientAlive(existingClient, sshKeepaliveTimeout)
+		if alive {
 			session, sessErr := existingClient.NewSession()
 			if sessErr == nil {
 				sshPoolMu.Lock()
@@ -756,7 +798,7 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	} else {
 		// Comprehensive interrogation for Master Panel VPS (includes Postgres DB, Backups, and Valkey Sockets)
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true;" 2>/dev/null || echo "0"; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0"; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT COALESCE((SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true), 0) || '|' || (SELECT count(*) FROM nodes);" 2>/dev/null || echo "0|0"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	}
 
 	out, err := session.Output(cmd)
@@ -930,35 +972,17 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 
-	// Anti-abuse (torrent blocker & egress filter) active?
-
-	antiAbuseActive := false
-
+	// Anti-abuse (torrent blocker) & Node presence (parsed from combined SQL output "a|b" or legacy parts)
+	col8 := ""
 	if len(parts) >= 9 {
-
-		cntStr := strings.TrimSpace(parts[8])
-
-		antiAbuseActive = cntStr != "0" && cntStr != ""
-
+		col8 = parts[8]
 	}
-
-
-
-	// Node present?
-
-	nodePresent := hasNodeContainer
-
+	col9 := ""
 	if len(parts) >= 10 {
-
-		cntStr := strings.TrimSpace(parts[9])
-
-		if cntStr != "0" && cntStr != "" {
-
-			nodePresent = true
-
-		}
-
+		col9 = parts[9]
 	}
+	antiAbuseActive, hasNodeInDB := parseMasterCounts(col8, col9)
+	nodePresent := hasNodeContainer || hasNodeInDB
 
 
 

@@ -50,12 +50,13 @@ export interface ServerCardProps {
   status?: types.ServerStatusResult;
   isLoading?: boolean;
   isCollapsed?: boolean;
-  activeServerMenu?: string | null;
+  isMenuOpen?: boolean;
   subTab?: string;
   actionLoading?: Record<string, boolean>;
-  cleaningDiskServerId?: string | null;
+  isCleaningDisk?: boolean;
   savedServers?: types.SavedServer[];
-  copiedKey?: string | null;
+  isSshCopied?: boolean;
+  isDecoyCopied?: boolean;
 
   toggleServerCollapse: (id: string) => void;
   setActiveServerMenu: (id: string | null) => void;
@@ -96,12 +97,13 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
   status,
   isLoading = false,
   isCollapsed = false,
-  activeServerMenu,
+  isMenuOpen = false,
   subTab = "overview",
   actionLoading = {},
-  cleaningDiskServerId,
+  isCleaningDisk = false,
   savedServers = [],
-  copiedKey,
+  isSshCopied = false,
+  isDecoyCopied = false,
   toggleServerCollapse,
   setActiveServerMenu,
   setServerSubTab,
@@ -183,7 +185,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                       return (
                         <div
                           key={srv.id}
-                          className={`server-item-card ${isMaster ? "master-card" : "node-card"} ${isChild ? "child-node-card" : ""} ${activeServerMenu === srv.id ? "menu-open" : ""} ${isCollapsed ? "collapsed" : ""}`}
+                          className={`server-item-card ${isMaster ? "master-card" : "node-card"} ${isChild ? "child-node-card" : ""} ${isMenuOpen ? "menu-open" : ""} ${isCollapsed ? "collapsed" : ""}`}
                           style={{ "--server-index": cardIndex } as React.CSSProperties}
                         >
                           {/* Server Card Header (Modern 2-Tier Responsive Layout) */}
@@ -251,14 +253,14 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                       )}
                                       {(srv as any).decoy_domain && (
                                         <span
-                                          className={`server-chip decoy-chip ${copiedKey === `decoy-${srv.id}` ? "copied" : ""}`}
+                                          className={`server-chip decoy-chip ${isDecoyCopied ? "copied" : ""}`}
                                           title="Decoy SNI маскировка. Нажмите для копирования"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             handleCopy((srv as any).decoy_domain, "Decoy Домен", `decoy-${srv.id}`);
                                           }}
                                         >
-                                          {copiedKey === `decoy-${srv.id}` ? (
+                                          {isDecoyCopied ? (
                                             <>
                                               <Check size={10} style={{ color: "#34d399" }} />
                                               <span style={{ color: "#34d399", fontWeight: 600 }}>Скопировано!</span>
@@ -374,10 +376,10 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                   <WinTooltip content="Дополнительные действия...">
                                     <button
                                       ref={moreMenuAnchorRef}
-                                      className={`win-button toolbar-action-btn icon-only ${activeServerMenu === srv.id ? "active" : ""}`}
+                                      className={`win-button toolbar-action-btn icon-only ${isMenuOpen ? "active" : ""}`}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setActiveServerMenu(activeServerMenu === srv.id ? null : srv.id);
+                                        setActiveServerMenu(isMenuOpen ? null : srv.id);
                                       }}
                                     >
                                       <MoreVertical size={14} />
@@ -385,7 +387,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                   </WinTooltip>
 
                                   <WinActionMenu
-                                    isOpen={activeServerMenu === srv.id}
+                                    isOpen={isMenuOpen}
                                     anchorRef={moreMenuAnchorRef}
                                     onClose={() => setActiveServerMenu(null)}
                                   >
@@ -533,10 +535,10 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                           setActiveServerMenu(null);
                                           handleCleanServerDisk(srv);
                                         }}
-                                        disabled={cleaningDiskServerId === srv.id}
+                                        disabled={isCleaningDisk}
                                       >
                                         <Trash2 size={14} style={{ color: "#f87171" }} />
-                                        <span>{cleaningDiskServerId === srv.id ? "Очистка диска..." : "Очистить диск (Smart Clean)"}</span>
+                                        <span>{isCleaningDisk ? "Очистка диска..." : "Очистить диск (Smart Clean)"}</span>
                                       </button>
 
                                       <button
@@ -594,11 +596,11 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                               <div className="server-header-bottom">
                                 <div className="server-meta-chips">
                                   <span
-                                    className={`server-chip mono ${copiedKey === `ssh-${srv.id}` ? "copied" : ""}`}
+                                    className={`server-chip mono ${isSshCopied ? "copied" : ""}`}
                                     onClick={() => handleCopy(`${srv.username}@${srv.host}:${srv.port}`, "SSH", `ssh-${srv.id}`)}
                                     title="Нажмите, чтобы скопировать SSH"
                                   >
-                                    {copiedKey === `ssh-${srv.id}` ? (
+                                    {isSshCopied ? (
                                       <>
                                         <Check size={11} style={{ color: "#34d399" }} />
                                         <span style={{ color: "#34d399", fontWeight: 600 }}>Скопировано!</span>
@@ -816,11 +818,11 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                             color: "var(--win-text-secondary)",
                                             cursor: "pointer",
                                           }}
-                                          disabled={cleaningDiskServerId === srv.id}
+                                          disabled={isCleaningDisk}
                                           onClick={() => handleCleanServerDisk(srv)}
                                         >
-                                          <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
-                                          <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
+                                          <Trash2 size={9} className={isCleaningDisk ? "animate-spin" : ""} />
+                                          <span>{isCleaningDisk ? "Очистка..." : "Очистить"}</span>
                                         </button>
                                       </WinTooltip>
                                     </div>
@@ -1291,10 +1293,10 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                     <button
                                       className="win-button"
                                       style={{ width: "100%", justifyContent: "center", height: "28px", fontSize: "12px" }}
-                                      disabled={cleaningDiskServerId === srv.id}
+                                      disabled={isCleaningDisk}
                                       onClick={() => handleCleanServerDisk(srv)}
                                     >
-                                      {cleaningDiskServerId === srv.id ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                      {isCleaningDisk ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
                                       <span>Очистить диск сервера</span>
                                     </button>
                                   </div>
@@ -1505,11 +1507,11 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                             color: "var(--win-text-secondary)",
                                             cursor: "pointer",
                                           }}
-                                          disabled={cleaningDiskServerId === srv.id}
+                                          disabled={isCleaningDisk}
                                           onClick={() => handleCleanServerDisk(srv)}
                                         >
-                                          <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
-                                          <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
+                                          <Trash2 size={9} className={isCleaningDisk ? "animate-spin" : ""} />
+                                          <span>{isCleaningDisk ? "Очистка..." : "Очистить"}</span>
                                         </button>
                                       </WinTooltip>
                                     </div>

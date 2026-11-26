@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 
 import {
 
@@ -201,18 +201,20 @@ const EventsOff = (eventName: string) => {
   Events.Off(eventName);
 };
 
-import { InspectLogsModal } from "./components/modals/InspectLogsModal";
-import { NodeSecretModal } from "./components/modals/NodeSecretModal";
-import { EditServerModal, EditServerData } from "./components/modals/EditServerModal";
-import { RestoreBackupModal } from "./components/modals/RestoreBackupModal";
-import { AntiProbingAuditModal } from "./components/modals/AntiProbingAuditModal";
-import { IPBlockModal } from "./components/modals/IPBlockModal";
-import { VPNProbeModal } from "./components/modals/VPNProbeModal";
-import { VaultUnlockModal } from "./components/modals/VaultUnlockModal";
-import { VaultSettingsModal } from "./components/modals/VaultSettingsModal";
+import type { EditServerData } from "./components/modals/EditServerModal";
 import { WinModal } from "./components/ui/WinModal";
 import { WinTooltip } from "./components/ui/WinTooltip";
 import { WinConfirmModal } from "./components/ui/WinConfirmModal";
+
+const InspectLogsModal = lazy(() => import("./components/modals/InspectLogsModal").then((m) => ({ default: m.InspectLogsModal })));
+const NodeSecretModal = lazy(() => import("./components/modals/NodeSecretModal").then((m) => ({ default: m.NodeSecretModal })));
+const EditServerModal = lazy(() => import("./components/modals/EditServerModal").then((m) => ({ default: m.EditServerModal })));
+const RestoreBackupModal = lazy(() => import("./components/modals/RestoreBackupModal").then((m) => ({ default: m.RestoreBackupModal })));
+const AntiProbingAuditModal = lazy(() => import("./components/modals/AntiProbingAuditModal").then((m) => ({ default: m.AntiProbingAuditModal })));
+const IPBlockModal = lazy(() => import("./components/modals/IPBlockModal").then((m) => ({ default: m.IPBlockModal })));
+const VPNProbeModal = lazy(() => import("./components/modals/VPNProbeModal").then((m) => ({ default: m.VPNProbeModal })));
+const VaultUnlockModal = lazy(() => import("./components/modals/VaultUnlockModal").then((m) => ({ default: m.VaultUnlockModal })));
+const VaultSettingsModal = lazy(() => import("./components/modals/VaultSettingsModal").then((m) => ({ default: m.VaultSettingsModal })));
 
 import { SettingsCard } from "./components/ui/SettingsCard";
 
@@ -3132,6 +3134,75 @@ export function App() {
     setTimeout(() => setCopiedLogs(false), 2000);
 
   };
+
+  // Referentially stable handler bundle so React.memo on ServerCard prevents full-list re-renders
+  const serverCardActionsRef = useRef<any>(null);
+  serverCardActionsRef.current = {
+    toggleServerCollapse,
+    setActiveServerMenu,
+    setServerSubTab,
+    handleCopy,
+    handleOpenBrowser,
+    handleOpenAudit,
+    handleInspectServer,
+    handleAddNodeToPanel,
+    handleRestartAll,
+    handleUpdateStack,
+    handleOptimizeBBR,
+    handleTogglePerformance,
+    setNodeModal,
+    handleOpenLogsModal,
+    handleRestartContainer,
+    handleOpenIPCheckModal,
+    handleOpenVPNProbeModal,
+    handleCleanServerDisk,
+    handleStartEditServer,
+    setReinstallModal,
+    setUninstallModal,
+    handleDeleteServer: handleRequestDeleteServer,
+    handleCreateBackup,
+    handleDownloadBackup,
+    setRestoreModal,
+    handleFixDBSync,
+    handleInstallWARP,
+    handleResetSuperadmin,
+    handleToggleAntiAbuse,
+  };
+
+  const stableServerCardActions = useMemo(
+    () => ({
+      toggleServerCollapse: (id: string) => serverCardActionsRef.current.toggleServerCollapse(id),
+      setActiveServerMenu: (id: string | null) => serverCardActionsRef.current.setActiveServerMenu(id),
+      setServerSubTab: ((val: any) => serverCardActionsRef.current.setServerSubTab(val)) as React.Dispatch<React.SetStateAction<any>>,
+      handleCopy: (text: string, label: string, key?: string) => serverCardActionsRef.current.handleCopy(text, label, key),
+      handleOpenBrowser: (url: string) => serverCardActionsRef.current.handleOpenBrowser(url),
+      handleOpenAudit: (srv: types.SavedServer) => serverCardActionsRef.current.handleOpenAudit(srv),
+      handleInspectServer: (srv: types.SavedServer) => serverCardActionsRef.current.handleInspectServer(srv),
+      handleAddNodeToPanel: (srv: types.SavedServer) => serverCardActionsRef.current.handleAddNodeToPanel(srv),
+      handleRestartAll: (srv: types.SavedServer) => serverCardActionsRef.current.handleRestartAll(srv),
+      handleUpdateStack: (srv: types.SavedServer) => serverCardActionsRef.current.handleUpdateStack(srv),
+      handleOptimizeBBR: (srv: types.SavedServer) => serverCardActionsRef.current.handleOptimizeBBR(srv),
+      handleTogglePerformance: (srv: types.SavedServer, currentOpt: boolean) => serverCardActionsRef.current.handleTogglePerformance(srv, currentOpt),
+      setNodeModal: (modal: any) => serverCardActionsRef.current.setNodeModal(modal),
+      handleOpenLogsModal: (srv: types.SavedServer, container: string) => serverCardActionsRef.current.handleOpenLogsModal(srv, container),
+      handleRestartContainer: (srv: types.SavedServer, container: string) => serverCardActionsRef.current.handleRestartContainer(srv, container),
+      handleOpenIPCheckModal: (srv: types.SavedServer) => serverCardActionsRef.current.handleOpenIPCheckModal(srv),
+      handleOpenVPNProbeModal: (srv: types.SavedServer) => serverCardActionsRef.current.handleOpenVPNProbeModal(srv),
+      handleCleanServerDisk: (srv: types.SavedServer) => serverCardActionsRef.current.handleCleanServerDisk(srv),
+      handleStartEditServer: (srv: types.SavedServer) => serverCardActionsRef.current.handleStartEditServer(srv),
+      setReinstallModal: (modal: any) => serverCardActionsRef.current.setReinstallModal(modal),
+      setUninstallModal: (modal: any) => serverCardActionsRef.current.setUninstallModal(modal),
+      handleDeleteServer: (id: string) => serverCardActionsRef.current.handleDeleteServer(id),
+      handleCreateBackup: (srv: types.SavedServer) => serverCardActionsRef.current.handleCreateBackup(srv),
+      handleDownloadBackup: (srv: types.SavedServer, fileName: string) => serverCardActionsRef.current.handleDownloadBackup(srv, fileName),
+      setRestoreModal: (modal: any) => serverCardActionsRef.current.setRestoreModal(modal),
+      handleFixDBSync: (srv: types.SavedServer) => serverCardActionsRef.current.handleFixDBSync(srv),
+      handleInstallWARP: (srv: types.SavedServer) => serverCardActionsRef.current.handleInstallWARP(srv),
+      handleResetSuperadmin: (srv: types.SavedServer) => serverCardActionsRef.current.handleResetSuperadmin(srv),
+      handleToggleAntiAbuse: (srv: types.SavedServer, current: boolean) => serverCardActionsRef.current.handleToggleAntiAbuse(srv, current),
+    }),
+    []
+  );
 
 
 
@@ -6819,43 +6890,16 @@ export function App() {
                           childCount={childCount}
                           cardIndex={cardIndex}
                           status={serverStatus[srv.id]}
-                          isLoading={serverLoading[srv.id]}
+                          isLoading={Boolean(serverLoading[srv.id])}
                           isCollapsed={Boolean(collapsedServers[srv.id])}
-                          activeServerMenu={activeServerMenu}
+                          isMenuOpen={activeServerMenu === srv.id}
                           subTab={serverSubTab[srv.id] || "overview"}
                           actionLoading={actionLoading}
-                          cleaningDiskServerId={cleaningDiskServerId}
+                          isCleaningDisk={cleaningDiskServerId === srv.id}
                           savedServers={savedServers}
-                          copiedKey={copiedKey}
-                          toggleServerCollapse={toggleServerCollapse}
-                          setActiveServerMenu={setActiveServerMenu}
-                          setServerSubTab={setServerSubTab}
-                          handleCopy={handleCopy}
-                          handleOpenBrowser={handleOpenBrowser}
-                          handleOpenAudit={handleOpenAudit}
-                          handleInspectServer={handleInspectServer}
-                          handleAddNodeToPanel={handleAddNodeToPanel}
-                          handleRestartAll={handleRestartAll}
-                          handleUpdateStack={handleUpdateStack}
-                          handleOptimizeBBR={handleOptimizeBBR}
-                          handleTogglePerformance={handleTogglePerformance}
-                          setNodeModal={setNodeModal}
-                          handleOpenLogsModal={handleOpenLogsModal}
-                          handleRestartContainer={handleRestartContainer}
-                          handleOpenIPCheckModal={handleOpenIPCheckModal}
-                          handleOpenVPNProbeModal={handleOpenVPNProbeModal}
-                          handleCleanServerDisk={handleCleanServerDisk}
-                          handleStartEditServer={handleStartEditServer}
-                          setReinstallModal={setReinstallModal}
-                          setUninstallModal={setUninstallModal}
-                          handleDeleteServer={handleRequestDeleteServer}
-                          handleCreateBackup={handleCreateBackup}
-                          handleDownloadBackup={handleDownloadBackup}
-                          setRestoreModal={setRestoreModal}
-                          handleFixDBSync={handleFixDBSync}
-                          handleInstallWARP={handleInstallWARP}
-                          handleResetSuperadmin={handleResetSuperadmin}
-                          handleToggleAntiAbuse={handleToggleAntiAbuse}
+                          isSshCopied={copiedKey === `ssh-${srv.id}`}
+                          isDecoyCopied={copiedKey === `decoy-${srv.id}`}
+                          {...stableServerCardActions}
                         />
                       );
 
@@ -7223,7 +7267,7 @@ export function App() {
 
 
       {/* Fluent Acrylic Logs Modal Window */}
-
+      <Suspense fallback={null}>
       {inspectModal && (
 
         <InspectLogsModal
@@ -7574,6 +7618,7 @@ export function App() {
           onClose={() => setConfirmModal(null)}
         />
       )}
+      </Suspense>
 
     </div>
 
