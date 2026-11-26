@@ -1,11 +1,19 @@
 package admin
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
 	"remna-ui/internal/types"
 )
+
+func isExpectedOSEncryptedPrefix(s string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(s, "enc:dpapi:")
+	}
+	return strings.HasPrefix(s, "enc:os:") || strings.HasPrefix(s, "enc:local:")
+}
 
 func TestSecurity_ContainerNameValidation(t *testing.T) {
 	validNames := []string{
@@ -141,8 +149,8 @@ func TestSecurity_DPAPIExtremeValues(t *testing.T) {
 
 	for _, tc := range testCases {
 		encrypted := encryptSecret(tc)
-		if !strings.HasPrefix(encrypted, "enc:dpapi:") {
-			t.Errorf("Encrypted string missing enc:dpapi: prefix: %s", encrypted[:20])
+		if !isExpectedOSEncryptedPrefix(encrypted) {
+			t.Errorf("Encrypted string missing expected OS prefix (%s): %s", runtime.GOOS, encrypted[:min(20, len(encrypted))])
 		}
 
 		decrypted := decryptSecret(encrypted)

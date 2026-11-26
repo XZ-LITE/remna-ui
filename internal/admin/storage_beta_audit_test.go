@@ -72,11 +72,11 @@ func TestStorageUnifiedPathAndDPAPI(t *testing.T) {
 		t.Fatalf("Test server was not found in raw servers.json")
 	}
 
-	if !strings.HasPrefix(foundRaw.Password, "enc:dpapi:") {
-		t.Errorf("Password was not encrypted with DPAPI on disk: %s", foundRaw.Password)
+	if !isExpectedOSEncryptedPrefix(foundRaw.Password) {
+		t.Errorf("Password was not encrypted by OS backend on disk: %s", foundRaw.Password)
 	}
-	if !strings.HasPrefix(foundRaw.SSHKey, "enc:dpapi:") {
-		t.Errorf("SSH key was not encrypted with DPAPI on disk: %s", foundRaw.SSHKey)
+	if !isExpectedOSEncryptedPrefix(foundRaw.SSHKey) {
+		t.Errorf("SSH key was not encrypted by OS backend on disk: %s", foundRaw.SSHKey)
 	}
 
 	// 4. Verify GetSavedServers() decrypts properly
