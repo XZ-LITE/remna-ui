@@ -69,10 +69,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Linux GTK/WebKit2GTK dependencies
+      - name: Install Linux GTK4/WebKitGTK 6.0 dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev libx11-dev libglib2.0-dev pkg-config
+          pkg-config --cflags gtk4 webkitgtk-6.0 libsoup-3.0 x11 glib-2.0
 
       - name: Setup Go
         uses: actions/setup-go@v5
