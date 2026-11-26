@@ -95,6 +95,8 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
         overflow: "hidden",
       }}
     >
+      {({ close }) => (
+        <>
       {/* Header - Fixed at Top */}
         <div className="node-modal-header" style={{ flexShrink: 0, padding: "14px 18px" }}>
           <div className="node-modal-title-wrap">
@@ -130,7 +132,7 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
           <button
             className="win-button"
             style={{ padding: "0 8px", height: "28px" }}
-            onClick={() => !loading && !applying && onClose()}
+            onClick={() => !loading && !applying && close()}
             title="Закрыть окно"
             disabled={loading || applying}
           >
@@ -611,7 +613,7 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
             <button
               className="win-button"
               disabled={loading || applying}
-              onClick={onClose}
+              onClick={close}
             >
               Закрыть
             </button>
@@ -639,6 +641,8 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
             </button>
           </div>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

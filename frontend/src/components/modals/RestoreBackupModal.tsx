@@ -33,6 +33,8 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
       width="95%"
       preventBackdropClose={loading}
     >
+      {({ close }) => (
+        <>
       <div className="win-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div className="modal-title-icon" style={{ background: "rgba(251,191,36,0.15)", color: "#fbbf24" }}>
@@ -48,7 +50,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
           <button
             className="win-modal-close"
             disabled={loading}
-            onClick={onClose}
+            onClick={close}
           >
             <X size={15} />
           </button>
@@ -206,7 +208,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
           <button
             className="win-button"
             disabled={loading}
-            onClick={onClose}
+            onClick={close}
           >
             Отмена
           </button>
@@ -224,6 +226,8 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
             <span>{loading ? "Выполняется восстановление..." : "Восстановить"}</span>
           </button>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

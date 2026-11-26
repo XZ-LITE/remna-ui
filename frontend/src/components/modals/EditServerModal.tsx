@@ -118,6 +118,8 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
         flexDirection: "column",
       }}
     >
+      {({ close }) => (
+        <>
       {/* Header */}
         <div className="win-modal-header" style={{ flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -148,7 +150,7 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
               </p>
             </div>
           </div>
-          <button className="win-modal-close" onClick={onClose} title="Закрыть">
+          <button className="win-modal-close" onClick={close} title="Закрыть">
             <X size={14} />
           </button>
         </div>
@@ -646,7 +648,7 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
             justifyContent: "space-between",
           }}
         >
-          <button className="win-button" onClick={onClose}>
+          <button className="win-button" onClick={close}>
             Отмена
           </button>
           <button className="win-button primary" onClick={onSave}>
@@ -654,6 +656,8 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
             <span>{isNew ? "Добавить в каталог" : "Сохранить изменения"}</span>
           </button>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

@@ -1,20 +1,44 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
 import { createPortal } from "react-dom";
+
+interface WinModalContextValue {
+  close: () => void;
+}
+
+const WinModalContext = createContext<WinModalContextValue | null>(null);
+
+/**
+ * Returns the nearest WinModal's animated close function.
+ * Calling `close()` plays the exit animation before invoking `onClose`.
+ */
+export function useWinModal(): WinModalContextValue {
+  const ctx = useContext(WinModalContext);
+  return ctx ?? { close: () => {} };
+}
 
 export interface WinModalProps {
   isOpen: boolean;
   onClose: () => void;
-  children: React.ReactNode;
+  children: React.ReactNode | ((helpers: { close: () => void }) => React.ReactNode);
   maxWidth?: string;
   width?: string;
   maxHeight?: string;
-  preventBackdropClose?: boolean;
   zIndex?: number;
-  className?: string;
   dialogClassName?: string;
-  contentStyle?: React.CSSProperties;
   dialogStyle?: React.CSSProperties;
+  preventBackdropClose?: boolean;
+  closeOnEscape?: boolean;
 }
+
+const EXIT_DURATION_MS = 140;
+const ENTER_DURATION_MS = 250;
 
 export const WinModal: React.FC<WinModalProps> = ({
   isOpen,
@@ -23,95 +47,114 @@ export const WinModal: React.FC<WinModalProps> = ({
   maxWidth,
   width,
   maxHeight,
-  preventBackdropClose = false,
   zIndex = 1000,
-  className = "",
   dialogClassName = "",
-  contentStyle,
   dialogStyle,
+  preventBackdropClose = false,
+  closeOnEscape = true,
 }) => {
   const [isRendered, setIsRendered] = useState(isOpen);
+  const [isEntering, setIsEntering] = useState(isOpen);
   const [isClosing, setIsClosing] = useState(false);
   const [isWobbling, setIsWobbling] = useState(false);
-  const closeTimeoutRef = useRef<number | null>(null);
-  const wobbleTimeoutRef = useRef<number | null>(null);
+
+  const closeTimerRef = useRef<number | null>(null);
+  const enterTimerRef = useRef<number | null>(null);
+  const wobbleTimerRef = useRef<number | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const clearTimers = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    if (enterTimerRef.current !== null) {
+      window.clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
+    if (wobbleTimerRef.current !== null) {
+      window.clearTimeout(wobbleTimerRef.current);
+      wobbleTimerRef.current = null;
+    }
+  }, []);
 
   const triggerWobble = useCallback(() => {
+    setIsEntering(false);
     setIsWobbling(false);
-    if (wobbleTimeoutRef.current) {
-      clearTimeout(wobbleTimeoutRef.current);
+    if (wobbleTimerRef.current !== null) {
+      window.clearTimeout(wobbleTimerRef.current);
     }
-    // Microtask restart so class re-triggers animation
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       setIsWobbling(true);
-    }, 10);
-    wobbleTimeoutRef.current = window.setTimeout(() => {
-      setIsWobbling(false);
-    }, 320);
+      wobbleTimerRef.current = window.setTimeout(() => {
+        setIsWobbling(false);
+        wobbleTimerRef.current = null;
+      }, 300);
+    });
   }, []);
 
   const handleClose = useCallback(() => {
     if (isClosing) return;
-    setIsClosing(true);
-    if (closeTimeoutRef.current) {
-      clearTimeout(closeTimeoutRef.current);
+    if (enterTimerRef.current !== null) {
+      window.clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
     }
-    closeTimeoutRef.current = window.setTimeout(() => {
+    setIsEntering(false);
+    setIsWobbling(false);
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
       setIsRendered(false);
       setIsClosing(false);
-      onClose();
-    }, 140);
-  }, [isClosing, onClose]);
+      onCloseRef.current();
+    }, EXIT_DURATION_MS);
+  }, [isClosing]);
 
-  // Handle external isOpen prop transitions
   useEffect(() => {
     if (isOpen) {
-      if (closeTimeoutRef.current) {
-        clearTimeout(closeTimeoutRef.current);
-      }
-      setIsClosing(false);
+      clearTimers();
       setIsRendered(true);
+      setIsClosing(false);
+      setIsWobbling(false);
+      setIsEntering(true);
+      enterTimerRef.current = window.setTimeout(() => {
+        setIsEntering(false);
+        enterTimerRef.current = null;
+      }, ENTER_DURATION_MS);
     } else if (isRendered && !isClosing) {
       handleClose();
     }
-  }, [isOpen, isRendered, isClosing, handleClose]);
+  }, [isOpen, isRendered, isClosing, handleClose, clearTimers]);
 
-  // Escape key handler
   useEffect(() => {
-    if (!isRendered) return;
+    if (!isRendered || isClosing) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (preventBackdropClose) {
+        if (preventBackdropClose || !closeOnEscape) {
+          e.preventDefault();
           triggerWobble();
         } else {
+          e.preventDefault();
           handleClose();
         }
       }
     };
 
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isRendered, preventBackdropClose, triggerWobble, handleClose]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isRendered, isClosing, preventBackdropClose, closeOnEscape, handleClose, triggerWobble]);
 
-  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
-      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-      if (wobbleTimeoutRef.current) clearTimeout(wobbleTimeoutRef.current);
+      clearTimers();
     };
-  }, []);
+  }, [clearTimers]);
 
-  if (!isRendered && typeof document === "undefined") {
-    return null;
-  }
-  if (!isRendered) {
-    return null;
-  }
+  if (!isRendered) return null;
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
     if (preventBackdropClose) {
       triggerWobble();
@@ -120,25 +163,54 @@ export const WinModal: React.FC<WinModalProps> = ({
     }
   };
 
+  const mergedDialogStyle: React.CSSProperties = {
+    ...(maxWidth ? { maxWidth } : {}),
+    ...(width ? { width } : {}),
+    ...(maxHeight ? { maxHeight } : {}),
+    ...dialogStyle,
+  };
+
+  const dialogStateClasses = [
+    "win-modal-dialog",
+    dialogClassName,
+    isEntering && !isClosing && !isWobbling ? "entering" : "",
+    isClosing ? "exiting" : "",
+    isWobbling ? "wobble-attention" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const content =
+    typeof children === "function" ? children({ close: handleClose }) : children;
+
   const modalNode = (
-    <div
-      className={`win-modal-backdrop ${isClosing ? "exiting" : "entering"} ${className}`}
-      style={{ zIndex, ...contentStyle }}
-      onClick={handleBackdropClick}
-    >
+    <WinModalContext.Provider value={{ close: handleClose }}>
       <div
-        className={`win-modal-dialog ${isClosing ? "exiting" : "entering"} ${isWobbling ? "wobble-attention" : ""} ${dialogClassName}`}
-        style={{
-          maxWidth: maxWidth || "860px",
-          width: width || "100%",
-          maxHeight: maxHeight || "85vh",
-          ...dialogStyle,
+        className={`win-modal-backdrop ${isEntering && !isClosing ? "entering" : ""} ${isClosing ? "exiting" : ""}`}
+        style={{ zIndex }}
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) {
+            (e.currentTarget as any)._mouseDownOnBackdrop = true;
+          } else {
+            (e.currentTarget as any)._mouseDownOnBackdrop = false;
+          }
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          if ((e.currentTarget as any)._mouseDownOnBackdrop) {
+            handleBackdropClick(e);
+          }
+          (e.currentTarget as any)._mouseDownOnBackdrop = false;
+        }}
       >
-        {children}
+        <div
+          className={dialogStateClasses}
+          style={mergedDialogStyle}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {content}
+        </div>
       </div>
-    </div>
+    </WinModalContext.Provider>
   );
 
   return createPortal(modalNode, document.body);

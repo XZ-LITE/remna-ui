@@ -52,6 +52,8 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
       dialogClassName="node-modal-dialog"
       preventBackdropClose={loading}
     >
+      {({ close }) => (
+        <>
       {/* Header */}
         <div className="node-modal-header">
           <div className="node-modal-title-wrap">
@@ -86,7 +88,7 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
             <button
               className="win-button"
               style={{ padding: "0 8px", height: "26px" }}
-              onClick={() => !loading && onClose()}
+              onClick={() => !loading && close()}
               title="Закрыть окно"
             >
               <X size={14} />
@@ -354,7 +356,7 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
             type="button"
             className="win-button"
             style={{ height: "32px", fontSize: "12.5px", padding: "0 18px" }}
-            onClick={() => !loading && onClose()}
+            onClick={() => !loading && close()}
             disabled={loading}
           >
             Отмена
@@ -389,6 +391,8 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
             )}
           </button>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

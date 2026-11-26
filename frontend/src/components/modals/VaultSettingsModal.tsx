@@ -127,7 +127,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
       dialogStyle={{
         padding: "24px",
         borderRadius: "12px",
-        background: "var(--win-bg-card)",
+        background: "var(--win-content-bg)",
         boxShadow: "0 20px 40px rgba(0, 0, 0, 0.45)",
         border: "1px solid var(--win-stroke-card)",
       }}

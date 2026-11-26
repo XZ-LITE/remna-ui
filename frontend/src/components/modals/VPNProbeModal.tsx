@@ -77,6 +77,8 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
       width="95%"
       preventBackdropClose={loading}
     >
+      {({ close }) => (
+        <>
       {/* Header */}
         <div className="win-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -96,7 +98,7 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
           <button
             className="win-modal-close"
             disabled={loading}
-            onClick={onClose}
+            onClick={close}
             title="Закрыть"
           >
             <X size={15} />
@@ -465,13 +467,15 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
             </button>
             <button
               className="win-btn primary"
-              onClick={onClose}
+              onClick={close}
               disabled={loading}
             >
               Закрыть
             </button>
           </div>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

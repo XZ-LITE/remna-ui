@@ -39,6 +39,8 @@ export const InspectLogsModal: React.FC<InspectLogsModalProps> = ({
 
   return (
     <WinModal isOpen={true} onClose={onClose} dialogClassName="inspect-logs-dialog">
+      {({ close }) => (
+        <>
       <div className="win-modal-header">
           <div className="win-modal-title">
             <TerminalIcon size={16} color="var(--win-accent)" />
@@ -50,7 +52,7 @@ export const InspectLogsModal: React.FC<InspectLogsModalProps> = ({
           <button
             className="win-button"
             style={{ padding: "0 8px", height: "26px" }}
-            onClick={onClose}
+            onClick={close}
           >
             <X size={14} />
           </button>
@@ -120,11 +122,13 @@ export const InspectLogsModal: React.FC<InspectLogsModalProps> = ({
           <button
             className="win-button primary"
             style={{ height: "26px", fontSize: "11.5px" }}
-            onClick={onClose}
+            onClick={close}
           >
             Закрыть
           </button>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

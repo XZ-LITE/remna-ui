@@ -7287,6 +7287,8 @@ export function App() {
           onClose={() => setReinstallModal(null)}
           maxWidth="520px"
         >
+          {({ close }) => (
+            <>
           <div className="win-modal-header">
             <div className="win-modal-title">
               <RotateCcw size={16} color="var(--win-accent)" />
@@ -7296,7 +7298,7 @@ export function App() {
               </span>
             </div>
             <WinTooltip content="Закрыть" shortcut="Esc">
-              <button className="win-button" style={{ padding: "0 8px", height: "26px" }} onClick={() => setReinstallModal(null)}>
+              <button className="win-button" style={{ padding: "0 8px", height: "26px" }} onClick={close}>
                 <X size={14} />
               </button>
             </WinTooltip>
@@ -7349,10 +7351,12 @@ export function App() {
             </div>
           </div>
           <div className="win-modal-footer">
-            <button className="win-button" style={{ height: "28px" }} onClick={() => setReinstallModal(null)}>
+            <button className="win-button" style={{ height: "28px" }} onClick={close}>
               Отмена
             </button>
           </div>
+            </>
+          )}
         </WinModal>
       )}
 
@@ -7362,7 +7366,10 @@ export function App() {
           isOpen={!!uninstallModal}
           onClose={() => !uninstallModal.loading && setUninstallModal(null)}
           maxWidth="500px"
+          preventBackdropClose={uninstallModal.loading}
         >
+          {({ close }) => (
+            <>
           <div className="win-modal-header">
             <div className="win-modal-title" style={{ color: "#fb7185" }}>
               <AlertOctagon size={16} color="#fb7185" />
@@ -7370,7 +7377,7 @@ export function App() {
             </div>
             {!uninstallModal.loading && (
               <WinTooltip content="Закрыть" shortcut="Esc">
-                <button className="win-button" style={{ padding: "0 8px", height: "26px" }} onClick={() => setUninstallModal(null)}>
+                <button className="win-button" style={{ padding: "0 8px", height: "26px" }} onClick={close}>
                   <X size={14} />
                 </button>
               </WinTooltip>
@@ -7399,7 +7406,7 @@ export function App() {
             </div>
           </div>
           <div className="win-modal-footer">
-            <button className="win-button" style={{ height: "28px" }} disabled={uninstallModal.loading} onClick={() => setUninstallModal(null)}>
+            <button className="win-button" style={{ height: "28px" }} disabled={uninstallModal.loading} onClick={close}>
               Отмена
             </button>
             <button
@@ -7421,6 +7428,8 @@ export function App() {
               )}
             </button>
           </div>
+            </>
+          )}
         </WinModal>
       )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, cloneElement } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 
 export interface WinTooltipProps {
@@ -7,204 +7,221 @@ export interface WinTooltipProps {
   placement?: "top" | "bottom" | "left" | "right";
   delay?: number;
   disabled?: boolean;
-  className?: string;
   children: React.ReactElement;
 }
 
-// Module-level warm tooltip tracker for instant transitions between neighboring controls
-let lastTooltipDismissTime = 0;
+// Global timestamp to enable warm-up chaining between adjacent tooltips
+let lastTooltipCloseTime = 0;
 
 export const WinTooltip: React.FC<WinTooltipProps> = ({
   content,
   shortcut,
   placement = "top",
-  delay = 250,
+  delay = 280,
   disabled = false,
-  className = "",
   children,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
-  const [coords, setCoords] = useState<{ top: number; left: number; actualPlacement: string }>({
-    top: 0,
-    left: 0,
-    actualPlacement: placement,
-  });
+  const [isPositioned, setIsPositioned] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: -9999, left: -9999 });
+  const [actualPlacement, setActualPlacement] = useState<"top" | "bottom" | "left" | "right">(placement);
 
   const triggerRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const timerRef = useRef<number | null>(null);
-
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
+  const isVisibleRef = useRef(false);
+  isVisibleRef.current = isVisible;
 
   const calculatePosition = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const gap = 6;
+    const triggerEl = triggerRef.current;
+    const tipEl = tooltipRef.current;
+    if (!triggerEl || !tipEl) return;
 
-    // Approximate size for first layout calculation
-    const tipWidth = tooltipRef.current?.offsetWidth || 120;
-    const tipHeight = tooltipRef.current?.offsetHeight || 28;
+    const rect = triggerEl.getBoundingClientRect();
+    const tipWidth = tipEl.offsetWidth;
+    const tipHeight = tipEl.offsetHeight;
+    if (tipWidth === 0 || tipHeight === 0) return;
 
-    let targetTop = 0;
-    let targetLeft = 0;
-    let currentPlacement = placement;
+    const gap = 8;
+    const margin = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
 
-    // Auto-flip vertical placement if close to window edge
-    if (placement === "top" && rect.top - tipHeight - gap < 4) {
-      currentPlacement = "bottom";
-    } else if (placement === "bottom" && rect.bottom + tipHeight + gap > window.innerHeight - 4) {
-      currentPlacement = "top";
+    let chosen = placement;
+
+    if (chosen === "top" && rect.top - tipHeight - gap < margin) {
+      chosen = "bottom";
+    } else if (chosen === "bottom" && rect.bottom + tipHeight + gap > vh - margin) {
+      chosen = "top";
+    } else if (chosen === "left" && rect.left - tipWidth - gap < margin) {
+      chosen = "right";
+    } else if (chosen === "right" && rect.right + tipWidth + gap > vw - margin) {
+      chosen = "left";
     }
 
-    switch (currentPlacement) {
+    let top = 0;
+    let left = 0;
+
+    switch (chosen) {
+      case "top":
+        top = rect.top - tipHeight - gap;
+        left = rect.left + (rect.width - tipWidth) / 2;
+        break;
       case "bottom":
-        targetTop = rect.bottom + gap;
-        targetLeft = rect.left + rect.width / 2 - tipWidth / 2;
+        top = rect.bottom + gap;
+        left = rect.left + (rect.width - tipWidth) / 2;
         break;
       case "left":
-        targetTop = rect.top + rect.height / 2 - tipHeight / 2;
-        targetLeft = rect.left - tipWidth - gap;
+        top = rect.top + (rect.height - tipHeight) / 2;
+        left = rect.left - tipWidth - gap;
         break;
       case "right":
-        targetTop = rect.top + rect.height / 2 - tipHeight / 2;
-        targetLeft = rect.right + gap;
-        break;
-      case "top":
-      default:
-        targetTop = rect.top - tipHeight - gap;
-        targetLeft = rect.left + rect.width / 2 - tipWidth / 2;
+        top = rect.top + (rect.height - tipHeight) / 2;
+        left = rect.right + gap;
         break;
     }
 
-    // Viewport bounds clamping
-    targetLeft = Math.max(8, Math.min(window.innerWidth - tipWidth - 8, targetLeft));
-    targetTop = Math.max(8, Math.min(window.innerHeight - tipHeight - 8, targetTop));
+    left = Math.max(margin, Math.min(left, vw - tipWidth - margin));
+    top = Math.max(margin, Math.min(top, vh - tipHeight - margin));
 
-    setCoords({
-      top: targetTop,
-      left: targetLeft,
-      actualPlacement: currentPlacement,
-    });
+    setCoords({ top, left });
+    setActualPlacement(chosen);
+    setIsPositioned(true);
   }, [placement]);
 
-  const showTooltip = () => {
+  const hideTooltip = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (isVisibleRef.current) {
+      lastTooltipCloseTime = Date.now();
+    }
+    setIsVisible(false);
+    setIsPositioned(false);
+  }, []);
+
+  const scheduleShow = useCallback(() => {
     if (disabled || !content) return;
-    clearTimer();
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+    }
+    const isWarm = Date.now() - lastTooltipCloseTime < 450;
+    const waitMs = isWarm ? 60 : delay;
 
-    // Check warm tooltip cache (within 350ms of last dismissal)
-    const isWarm = Date.now() - lastTooltipDismissTime < 350;
-    const effectiveDelay = isWarm ? 0 : delay;
-
-    if (effectiveDelay === 0) {
-      calculatePosition();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      setIsPositioned(false);
       setIsVisible(true);
-    } else {
-      timerRef.current = window.setTimeout(() => {
-        calculatePosition();
-        setIsVisible(true);
-      }, effectiveDelay);
-    }
-  };
+    }, waitMs);
+  }, [disabled, content, delay]);
 
-  const hideTooltip = () => {
-    clearTimer();
+  // Measure and position synchronously before browser paint
+  useLayoutEffect(() => {
     if (isVisible) {
-      lastTooltipDismissTime = Date.now();
-      setIsVisible(false);
-    }
-  };
-
-  // Recalculate accurately when tooltip element mounts
-  useEffect(() => {
-    if (isVisible && tooltipRef.current) {
       calculatePosition();
     }
-  }, [isVisible, calculatePosition]);
+  }, [isVisible, content, shortcut, calculatePosition]);
 
-  // Dismiss on any scroll or window resize
+  // Dismiss on scroll, resize, window blur, or Escape while visible
   useEffect(() => {
     if (!isVisible) return;
 
-    const handleDismiss = () => {
-      hideTooltip();
+    const handleDismiss = () => hideTooltip();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") hideTooltip();
     };
 
     window.addEventListener("scroll", handleDismiss, true);
     window.addEventListener("resize", handleDismiss);
-
+    window.addEventListener("blur", handleDismiss);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("scroll", handleDismiss, true);
       window.removeEventListener("resize", handleDismiss);
+      window.removeEventListener("blur", handleDismiss);
+      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isVisible]);
+  }, [isVisible, hideTooltip]);
 
-  // Clean timer on unmount
+  // Hide if disabled becomes true while visible (WebView2 skips mouseleave on disabled elements)
+  const childDisabled = Boolean((children.props as any)?.disabled);
   useEffect(() => {
-    return () => clearTimer();
+    if ((disabled || childDisabled) && isVisible) {
+      hideTooltip();
+    }
+  }, [disabled, childDisabled, isVisible, hideTooltip]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+      }
+    };
   }, []);
 
-  const childProps = (children as any).props || {};
+  const childProps = children.props as any;
+  const existingRef = (children as any).ref;
 
-  const clonedChild = cloneElement(children as React.ReactElement<any>, {
-    ref: (node: HTMLElement | null) => {
+  const mergedRef = useCallback(
+    (node: HTMLElement | null) => {
       triggerRef.current = node;
-      // Preserve original ref if child has one
-      const originalRef = (children as any).ref;
-      if (typeof originalRef === "function") {
-        originalRef(node);
-      } else if (originalRef && typeof originalRef === "object") {
-        originalRef.current = node;
+      if (typeof existingRef === "function") {
+        existingRef(node);
+      } else if (existingRef && typeof existingRef === "object") {
+        existingRef.current = node;
       }
     },
+    [existingRef]
+  );
+
+  const clonedChild = React.cloneElement(children as React.ReactElement<any>, {
+    ref: mergedRef,
     onMouseEnter: (e: React.MouseEvent) => {
-      childProps.onMouseEnter?.(e);
-      showTooltip();
+      scheduleShow();
+      if (typeof childProps?.onMouseEnter === "function") childProps.onMouseEnter(e);
     },
     onMouseLeave: (e: React.MouseEvent) => {
-      childProps.onMouseLeave?.(e);
       hideTooltip();
+      if (typeof childProps?.onMouseLeave === "function") childProps.onMouseLeave(e);
     },
-    onClick: (e: React.MouseEvent) => {
-      childProps.onClick?.(e);
+    onMouseDown: (e: React.MouseEvent) => {
       hideTooltip();
+      if (typeof childProps?.onMouseDown === "function") childProps.onMouseDown(e);
     },
     onFocus: (e: React.FocusEvent) => {
-      childProps.onFocus?.(e);
-      showTooltip();
+      if (typeof childProps?.onFocus === "function") childProps.onFocus(e);
     },
     onBlur: (e: React.FocusEvent) => {
-      childProps.onBlur?.(e);
       hideTooltip();
+      if (typeof childProps?.onBlur === "function") childProps.onBlur(e);
     },
-  } as any);
+  });
 
-  return (
-    <>
-      {clonedChild}
-      {isVisible &&
-        typeof document !== "undefined" &&
-        createPortal(
+  const tooltipNode =
+    isVisible && content
+      ? createPortal(
           <div
             ref={tooltipRef}
-            className={`win-tooltip-popup placement-${coords.actualPlacement} ${className}`}
-            role="tooltip"
+            className={`win-tooltip-popup placement-${actualPlacement} ${isPositioned ? "positioned" : ""}`}
             style={{
-              position: "fixed",
               top: `${coords.top}px`,
               left: `${coords.left}px`,
-              zIndex: 16000,
+              visibility: isPositioned ? "visible" : "hidden",
             }}
+            role="tooltip"
           >
             <span className="win-tooltip-text">{content}</span>
             {shortcut && <kbd className="win-kbd">{shortcut}</kbd>}
           </div>,
           document.body
-        )}
+        )
+      : null;
+
+  return (
+    <>
+      {clonedChild}
+      {tooltipNode}
     </>
   );
 };

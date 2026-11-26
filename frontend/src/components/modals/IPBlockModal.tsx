@@ -107,6 +107,8 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
       width="95%"
       preventBackdropClose={loading}
     >
+      {({ close }) => (
+        <>
       {/* Header */}
         <div className="win-modal-header">
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -126,7 +128,7 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
           <button
             className="win-modal-close"
             disabled={loading}
-            onClick={onClose}
+            onClick={close}
             title="Закрыть"
           >
             <X size={15} />
@@ -422,12 +424,14 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
               type="button"
               className="win-button"
               style={{ background: "var(--win-accent)", color: "#ffffff", borderColor: "var(--win-accent)" }}
-              onClick={onClose}
+              onClick={close}
             >
               Закрыть
             </button>
           </div>
         </div>
+        </>
+      )}
     </WinModal>
   );
 };

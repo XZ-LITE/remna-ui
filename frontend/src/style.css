@@ -2878,7 +2878,11 @@ input::-webkit-credentials-auto-fill-button {
   justify-content: center;
   z-index: 1000;
   padding: 24px;
-  animation: backdropFade 0.2s var(--win-ease-decelerate);
+}
+
+.win-modal-backdrop.entering,
+.win-modal-overlay.entering {
+  animation: backdropFade 0.2s var(--win-ease-decelerate) both;
 }
 
 .win-modal-backdrop.exiting,
@@ -2893,7 +2897,7 @@ input::-webkit-credentials-auto-fill-button {
   max-width: 860px;
   height: auto;
   max-height: 85vh;
-  background: var(--win-card-bg);
+  background: var(--win-content-bg);
   backdrop-filter: blur(40px);
   border: 1px solid var(--win-card-stroke-hover);
   border-radius: 10px;
@@ -2901,8 +2905,12 @@ input::-webkit-credentials-auto-fill-button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: modalEnter 0.24s var(--win-ease-decelerate);
   color: var(--win-text-primary);
+}
+
+.win-modal-dialog.entering,
+.win-modal-content.entering {
+  animation: modalEnter 0.24s var(--win-ease-decelerate) both;
 }
 
 .win-modal-dialog.exiting,
@@ -3107,9 +3115,14 @@ textarea.win-input {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  white-space: nowrap;
-  animation: tooltipEnter 0.12s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+  width: max-content;
+  max-width: 320px;
+  white-space: normal;
   box-sizing: border-box;
+}
+
+.win-tooltip-popup.positioned {
+  animation: tooltipEnter 0.12s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
 }
 
 :root[data-theme="light"] .win-tooltip-popup {
@@ -3889,11 +3902,10 @@ textarea.win-input {
   height: auto;
   max-height: 90vh;
   border-radius: 8px;
-  background: var(--win-card-bg);
+  background: var(--win-content-bg);
   backdrop-filter: blur(40px);
   border: 1px solid var(--win-card-stroke-hover);
   box-shadow: var(--win-elevation-shadow);
-  animation: modalEnter 0.24s var(--win-ease-decelerate);
 }
 
 .node-modal-header {
