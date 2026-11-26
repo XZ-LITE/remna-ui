@@ -45,8 +45,6 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
     }
   }, [isOpen, vaultStatus]);
 
-  if (!isOpen) return null;
-
   const isMasterEnabled = Boolean(vaultStatus?.enabled);
 
   const handleEnableOrChange = async (e: React.FormEvent) => {
@@ -132,6 +130,8 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
         border: "1px solid var(--win-stroke-card)",
       }}
     >
+      {({ close }) => (
+        <>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -162,7 +162,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
             type="button"
             className="win-button"
             style={{ padding: "0 8px", height: "26px" }}
-            onClick={() => !loading && onClose()}
+            onClick={() => !loading && close()}
             title="Закрыть"
           >
             <X size={14} />
@@ -401,6 +401,8 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
             </div>
           </form>
         )}
+        </>
+      )}
     </WinModal>
   );
 };

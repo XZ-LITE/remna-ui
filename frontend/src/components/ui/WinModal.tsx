@@ -37,7 +37,7 @@ export interface WinModalProps {
   closeOnEscape?: boolean;
 }
 
-const EXIT_DURATION_MS = 140;
+const EXIT_DURATION_MS = 170;
 const ENTER_DURATION_MS = 250;
 
 export const WinModal: React.FC<WinModalProps> = ({
@@ -61,6 +61,9 @@ export const WinModal: React.FC<WinModalProps> = ({
   const closeTimerRef = useRef<number | null>(null);
   const enterTimerRef = useRef<number | null>(null);
   const wobbleTimerRef = useRef<number | null>(null);
+  const wasOpenRef = useRef(false);
+  const isRenderedRef = useRef(isOpen);
+  const isClosingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -95,43 +98,55 @@ export const WinModal: React.FC<WinModalProps> = ({
   }, []);
 
   const handleClose = useCallback(() => {
-    if (isClosing) return;
+    if (isClosingRef.current || !isRenderedRef.current) return;
     if (enterTimerRef.current !== null) {
       window.clearTimeout(enterTimerRef.current);
       enterTimerRef.current = null;
     }
+    isClosingRef.current = true;
     setIsEntering(false);
     setIsWobbling(false);
     setIsClosing(true);
     closeTimerRef.current = window.setTimeout(() => {
       closeTimerRef.current = null;
+      isClosingRef.current = false;
+      isRenderedRef.current = false;
+      wasOpenRef.current = false;
       setIsRendered(false);
       setIsClosing(false);
       onCloseRef.current();
     }, EXIT_DURATION_MS);
-  }, [isClosing]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      clearTimers();
-      setIsRendered(true);
-      setIsClosing(false);
-      setIsWobbling(false);
-      setIsEntering(true);
-      enterTimerRef.current = window.setTimeout(() => {
-        setIsEntering(false);
-        enterTimerRef.current = null;
-      }, ENTER_DURATION_MS);
-    } else if (isRendered && !isClosing) {
-      handleClose();
+      if (!wasOpenRef.current) {
+        wasOpenRef.current = true;
+        clearTimers();
+        isClosingRef.current = false;
+        isRenderedRef.current = true;
+        setIsRendered(true);
+        setIsClosing(false);
+        setIsWobbling(false);
+        setIsEntering(true);
+        enterTimerRef.current = window.setTimeout(() => {
+          setIsEntering(false);
+          enterTimerRef.current = null;
+        }, ENTER_DURATION_MS);
+      }
+    } else {
+      wasOpenRef.current = false;
+      if (isRenderedRef.current && !isClosingRef.current) {
+        handleClose();
+      }
     }
-  }, [isOpen, isRendered, isClosing, handleClose, clearTimers]);
+  }, [isOpen, clearTimers, handleClose]);
 
   useEffect(() => {
     if (!isRendered || isClosing) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.defaultPrevented) {
         if (preventBackdropClose || !closeOnEscape) {
           e.preventDefault();
           triggerWobble();
@@ -148,6 +163,7 @@ export const WinModal: React.FC<WinModalProps> = ({
 
   useEffect(() => {
     return () => {
+      wasOpenRef.current = false;
       clearTimers();
     };
   }, [clearTimers]);

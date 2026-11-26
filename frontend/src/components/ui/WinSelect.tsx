@@ -174,6 +174,8 @@ export const WinSelect: React.FC<WinSelectProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
         closeMenu();
         triggerRef.current?.focus();
       }
