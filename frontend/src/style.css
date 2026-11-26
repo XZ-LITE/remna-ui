@@ -14,6 +14,7 @@
   --win-sidebar-bg: rgba(22, 25, 32, 0.85);
   --win-subtle-acrylic: rgba(26, 30, 40, 0.75);
   --win-content-bg: #181b22;
+  --win-modal-bg: rgba(24, 28, 37, 0.86);
   
   /* Cards & Controls */
   --win-card-bg: rgba(255, 255, 255, 0.045);
@@ -110,6 +111,7 @@
   --win-sidebar-bg: rgba(243, 243, 243, 0.9);
   --win-subtle-acrylic: rgba(255, 255, 255, 0.85);
   --win-content-bg: #f9f9f9;
+  --win-modal-bg: rgba(250, 250, 252, 0.88);
   
   /* Cards & Controls */
   --win-card-bg: #ffffff;
@@ -614,7 +616,10 @@ body {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background: var(--win-mica-bg);
+  background-color: var(--win-mica-bg);
+  background-image:
+    radial-gradient(ellipse 65% 55% at 18% 12%, rgba(96, 205, 255, 0.08), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 88% 85%, rgba(99, 102, 241, 0.08), transparent 70%);
   backdrop-filter: blur(50px);
 }
 
@@ -976,6 +981,8 @@ body {
 
 .settings-card-group {
   background: var(--win-card-bg);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--win-card-stroke);
   border-radius: 8px;
   overflow: hidden;
@@ -2251,6 +2258,8 @@ input::-webkit-credentials-auto-fill-button {
 
 .server-item-card {
   background: var(--win-card-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--win-card-stroke);
   border-radius: 8px;
   overflow: visible;
@@ -2893,8 +2902,9 @@ input::-webkit-credentials-auto-fill-button {
   max-width: 860px;
   height: auto;
   max-height: 85vh;
-  background: var(--win-content-bg);
+  background: var(--win-modal-bg);
   backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
   border: 1px solid var(--win-card-stroke-hover);
   border-radius: 10px;
   box-shadow: var(--win-elevation-shadow);
@@ -3523,6 +3533,8 @@ textarea.win-input {
 
 .tool-card {
   background: var(--win-kpi-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--win-kpi-border);
   border-radius: 8px;
   padding: 16px;
@@ -3942,8 +3954,9 @@ textarea.win-input {
   height: auto;
   max-height: 90vh;
   border-radius: 8px;
-  background: var(--win-content-bg);
+  background: var(--win-modal-bg);
   backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
   border: 1px solid var(--win-card-stroke-hover);
   box-shadow: var(--win-elevation-shadow);
 }

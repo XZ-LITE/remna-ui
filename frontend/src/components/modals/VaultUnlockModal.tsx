@@ -64,7 +64,7 @@ export const VaultUnlockModal: React.FC<VaultUnlockModalProps> = ({
         padding: "24px",
         textAlign: "center",
         borderRadius: "12px",
-        background: "var(--win-content-bg)",
+        background: "var(--win-modal-bg)",
         boxShadow: "0 20px 40px rgba(0, 0, 0, 0.45)",
         border: "1px solid var(--win-stroke-card)",
       }}
