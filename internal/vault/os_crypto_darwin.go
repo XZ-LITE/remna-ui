@@ -3,10 +3,13 @@
 package vault
 
 import (
+	"context"
 	"encoding/hex"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"remna-ui/internal/crypto"
 )
@@ -19,7 +22,9 @@ const (
 var platformUUIDRegex = regexp.MustCompile(`"IOPlatformUUID"\s*=\s*"([^"]+)"`)
 
 func getDarwinPlatformUUID() string {
-	out, err := exec.Command("/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "/usr/sbin/ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output()
 	if err == nil {
 		if m := platformUUIDRegex.FindSubmatch(out); len(m) == 2 {
 			return strings.TrimSpace(string(m[1]))
@@ -29,8 +34,14 @@ func getDarwinPlatformUUID() string {
 }
 
 func getOrCreateKeychainKey() ([]byte, bool) {
-	// Try reading existing 32-byte hex key from macOS Keychain
-	if out, err := exec.Command("/usr/bin/security", "find-generic-password", "-s", keychainService, "-a", keychainAccount, "-w").Output(); err == nil {
+	// Skip interactive Keychain prompts in headless CI test runners
+	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+		return nil, false
+	}
+
+	ctxFind, cancelFind := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelFind()
+	if out, err := exec.CommandContext(ctxFind, "/usr/bin/security", "find-generic-password", "-s", keychainService, "-a", keychainAccount, "-w").Output(); err == nil {
 		keyHex := strings.TrimSpace(string(out))
 		if raw, decErr := hex.DecodeString(keyHex); decErr == nil && len(raw) == 32 {
 			return raw, true
@@ -43,7 +54,9 @@ func getOrCreateKeychainKey() ([]byte, bool) {
 		return nil, false
 	}
 	keyHex := hex.EncodeToString(newKey)
-	if err := exec.Command("/usr/bin/security", "add-generic-password", "-U", "-s", keychainService, "-a", keychainAccount, "-w", keyHex).Run(); err != nil {
+	ctxAdd, cancelAdd := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelAdd()
+	if err := exec.CommandContext(ctxAdd, "/usr/bin/security", "add-generic-password", "-U", "-s", keychainService, "-a", keychainAccount, "-w", keyHex).Run(); err != nil {
 		crypto.Memclr(newKey)
 		return nil, false
 	}

@@ -2,13 +2,14 @@ name: Build Multi-OS (Windows, Linux, macOS)
 
 on:
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Optional tag name if creating a draft/manual test"
-        required: false
   push:
+    branches:
+      - "dev-wails3"
+      - "main"
     tags:
       - "v*"
+    paths-ignore:
+      - "**.md"
 
 permissions:
   contents: write
@@ -46,9 +47,13 @@ jobs:
           npm ci
           npm run build
 
+      - name: Run Go Unit Tests
+        run: go test ./internal/admin ./internal/crypto ./internal/dns ./internal/generator ./internal/probe ./internal/ssh ./internal/vault
+
       - name: Build Windows Executable
+        shell: pwsh
         run: |
-          mkdir -Force build/bin
+          New-Item -ItemType Directory -Force -Path build/bin | Out-Null
           go build -ldflags="-H windowsgui -s -w" -o build/bin/remna-ui-windows-amd64.exe .
 
       - name: Upload Windows Artifact
@@ -139,29 +144,28 @@ jobs:
           CGO_ENABLED=1 GOARCH=amd64 go build -ldflags="-s -w" -o build/bin/amd64/remna-ui .
           lipo -create -output "build/bin/Remnawave Manager.app/Contents/MacOS/remna-ui" build/bin/arm64/remna-ui build/bin/amd64/remna-ui
           chmod +x "build/bin/Remnawave Manager.app/Contents/MacOS/remna-ui"
-          cat > "build/bin/Remnawave Manager.app/Contents/Info.plist" << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleExecutable</key>
-            <string>remna-ui</string>
-            <key>CFBundleIdentifier</key>
-            <string>org.remnawave.ui</string>
-            <key>CFBundleName</key>
-            <string>Remnawave Manager</string>
-            <key>CFBundleDisplayName</key>
-            <string>Remnawave Manager</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>3.0.0</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-          </dict>
-          </plist>
-          EOF
-          cd build/bin && zip -r remna-ui-macos-universal.zip "Remnawave Manager.app"
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0">' \
+            '<dict>' \
+            '  <key>CFBundleExecutable</key>' \
+            '  <string>remna-ui</string>' \
+            '  <key>CFBundleIdentifier</key>' \
+            '  <string>org.remnawave.ui</string>' \
+            '  <key>CFBundleName</key>' \
+            '  <string>Remnawave Manager</string>' \
+            '  <key>CFBundleDisplayName</key>' \
+            '  <string>Remnawave Manager</string>' \
+            '  <key>CFBundlePackageType</key>' \
+            '  <string>APPL</string>' \
+            '  <key>CFBundleShortVersionString</key>' \
+            '  <string>3.0.0</string>' \
+            '  <key>NSHighResolutionCapable</key>' \
+            '  <true/>' \
+            '</dict>' \
+            '</plist>' > "build/bin/Remnawave Manager.app/Contents/Info.plist"
+          (cd build/bin && zip -r remna-ui-macos-universal.zip "Remnawave Manager.app")
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
