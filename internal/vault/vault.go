@@ -1,34 +1,19 @@
 package vault
 
 import (
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"remna-ui/internal/crypto"
 	"remna-ui/internal/types"
 )
-
-var (
-	modcrypt32                 = syscall.NewLazyDLL("crypt32.dll")
-	procCryptProtectData   = modcrypt32.NewProc("CryptProtectData")
-	procCryptUnprotectData = modcrypt32.NewProc("CryptUnprotectData")
-)
-
-type dataBlob struct {
-	cbData uint32
-	pbData *byte
-}
 
 type VaultConfigFile struct {
 	Enabled         bool   `json:"enabled"`
@@ -39,6 +24,8 @@ type VaultConfigFile struct {
 
 type Manager struct {
 	mu           sync.RWMutex
+	osKeyMu      sync.Mutex
+	osKey        []byte
 	storeDir     string
 	config       VaultConfigFile
 	activeKey    []byte
@@ -63,7 +50,10 @@ func GetManager() *Manager {
 }
 
 func resolveStoreDir() string {
-	appData := os.Getenv("APPDATA")
+	appData, err := os.UserConfigDir()
+	if err != nil || appData == "" {
+		appData = os.Getenv("APPDATA")
+	}
 	if appData == "" {
 		home, _ := os.UserHomeDir()
 		appData = filepath.Join(home, ".config")
@@ -161,8 +151,10 @@ func (m *Manager) GetStatus() types.VaultStatus {
 	defer m.mu.RUnlock()
 
 	mode := "dpapi"
+	backend := m.getOSProtectionBackend()
 	if m.config.Enabled {
 		mode = "master_password"
+		backend = "master_password"
 	}
 
 	hasServers := false
@@ -171,11 +163,12 @@ func (m *Manager) GetStatus() types.VaultStatus {
 	}
 
 	return types.VaultStatus{
-		Enabled:         m.config.Enabled,
-		Unlocked:        m.isUnlocked,
-		Mode:            mode,
-		AutoLockMinutes: m.config.AutoLockMinutes,
-		HasSavedServers: hasServers,
+		Enabled:           m.config.Enabled,
+		Unlocked:          m.isUnlocked,
+		Mode:              mode,
+		ProtectionBackend: backend,
+		AutoLockMinutes:   m.config.AutoLockMinutes,
+		HasSavedServers:   hasServers,
 	}
 }
 
@@ -271,8 +264,8 @@ func (m *Manager) SetMasterPassword(oldPass, newPass string, reencryptFn func(de
 			}
 			return string(data), nil
 		}
-		if strings.HasPrefix(raw, "enc:dpapi:") {
-			return decryptDPAPI(raw), nil
+		if strings.HasPrefix(raw, prefixDPAPI) || strings.HasPrefix(raw, prefixOS) || strings.HasPrefix(raw, prefixLocal) {
+			return m.decryptOSSecret(raw), nil
 		}
 		return raw, nil
 	}
@@ -353,8 +346,8 @@ func (m *Manager) DisableMasterPassword(currentPass string, reencryptFn func(dec
 			}
 			return string(data), nil
 		}
-		if strings.HasPrefix(raw, "enc:dpapi:") {
-			return decryptDPAPI(raw), nil
+		if strings.HasPrefix(raw, prefixDPAPI) || strings.HasPrefix(raw, prefixOS) || strings.HasPrefix(raw, prefixLocal) {
+			return m.decryptOSSecret(raw), nil
 		}
 		return raw, nil
 	}
@@ -363,7 +356,7 @@ func (m *Manager) DisableMasterPassword(currentPass string, reencryptFn func(dec
 		if plain == "" {
 			return "", nil
 		}
-		return encryptDPAPI(plain), nil
+		return m.encryptOSSecret(plain), nil
 	}
 
 	if reencryptFn != nil {
@@ -428,7 +421,7 @@ func (m *Manager) EncryptSecret(secret string) (string, error) {
 		return "enc:vault:" + enc, nil
 	}
 
-	return encryptDPAPI(secret), nil
+	return m.encryptOSSecret(secret), nil
 }
 
 func (m *Manager) DecryptSecret(encrypted string) (string, error) {
@@ -436,7 +429,7 @@ func (m *Manager) DecryptSecret(encrypted string) (string, error) {
 		return "", nil
 	}
 
-	if strings.HasPrefix(encrypted, "enc:vault:") {
+	if strings.HasPrefix(encrypted, prefixVault) {
 		m.CheckAutoLock()
 		m.mu.RLock()
 		defer m.mu.RUnlock()
@@ -444,7 +437,7 @@ func (m *Manager) DecryptSecret(encrypted string) (string, error) {
 		if !m.config.Enabled || !m.isUnlocked || len(m.activeKey) == 0 {
 			return "", errors.New("хранилище заблокировано мастер-паролем")
 		}
-		b64Payload := strings.TrimPrefix(encrypted, "enc:vault:")
+		b64Payload := strings.TrimPrefix(encrypted, prefixVault)
 		data, err := crypto.DecryptAESGCM(b64Payload, m.activeKey)
 		if err != nil {
 			return "", err
@@ -452,8 +445,8 @@ func (m *Manager) DecryptSecret(encrypted string) (string, error) {
 		return string(data), nil
 	}
 
-	if strings.HasPrefix(encrypted, "enc:dpapi:") {
-		return decryptDPAPI(encrypted), nil
+	if strings.HasPrefix(encrypted, prefixDPAPI) || strings.HasPrefix(encrypted, prefixOS) || strings.HasPrefix(encrypted, prefixLocal) {
+		return m.decryptOSSecret(encrypted), nil
 	}
 
 	return encrypted, nil
@@ -544,72 +537,4 @@ func (m *Manager) reencryptSecureValuesLocked(decryptOld func(string) (string, e
 		return err
 	}
 	return os.WriteFile(m.secretsPath(), out, 0600)
-}
-
-func encryptDPAPI(secret string) string {
-	if secret == "" || strings.HasPrefix(secret, "enc:dpapi:") || strings.HasPrefix(secret, "enc:vault:") {
-		return secret
-	}
-	if runtime.GOOS != "windows" {
-		return secret
-	}
-	bytesData := []byte(secret)
-	var inBlob, outBlob dataBlob
-	inBlob.cbData = uint32(len(bytesData))
-	if len(bytesData) > 0 {
-		inBlob.pbData = &bytesData[0]
-	}
-	r, _, _ := procCryptProtectData.Call(
-		uintptr(unsafe.Pointer(&inBlob)),
-		0,
-		0,
-		0,
-		0,
-		0x01, // CRYPTPROTECT_UI_FORBIDDEN
-		uintptr(unsafe.Pointer(&outBlob)),
-	)
-	if r == 0 || outBlob.pbData == nil {
-		return secret
-	}
-	defer syscall.LocalFree(syscall.Handle(unsafe.Pointer(outBlob.pbData)))
-	outBytes := make([]byte, outBlob.cbData)
-	for i := uint32(0); i < outBlob.cbData; i++ {
-		outBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(outBlob.pbData)) + uintptr(i)))
-	}
-	return "enc:dpapi:" + base64.StdEncoding.EncodeToString(outBytes)
-}
-
-func decryptDPAPI(encrypted string) string {
-	if !strings.HasPrefix(encrypted, "enc:dpapi:") {
-		return encrypted
-	}
-	if runtime.GOOS != "windows" {
-		return encrypted
-	}
-	rawB64 := strings.TrimPrefix(encrypted, "enc:dpapi:")
-	data, err := base64.StdEncoding.DecodeString(rawB64)
-	if err != nil || len(data) == 0 {
-		return encrypted
-	}
-	var inBlob, outBlob dataBlob
-	inBlob.cbData = uint32(len(data))
-	inBlob.pbData = &data[0]
-	r, _, _ := procCryptUnprotectData.Call(
-		uintptr(unsafe.Pointer(&inBlob)),
-		0,
-		0,
-		0,
-		0,
-		0x01, // CRYPTPROTECT_UI_FORBIDDEN
-		uintptr(unsafe.Pointer(&outBlob)),
-	)
-	if r == 0 || outBlob.pbData == nil {
-		return encrypted
-	}
-	defer syscall.LocalFree(syscall.Handle(unsafe.Pointer(outBlob.pbData)))
-	outBytes := make([]byte, outBlob.cbData)
-	for i := uint32(0); i < outBlob.cbData; i++ {
-		outBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(outBlob.pbData)) + uintptr(i)))
-	}
-	return string(outBytes)
 }

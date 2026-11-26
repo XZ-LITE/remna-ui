@@ -47,6 +47,14 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
   }, [isOpen, vaultStatus]);
 
   const isMasterEnabled = Boolean(vaultStatus?.enabled);
+  const osBackendLabel =
+    vaultStatus?.protection_backend === "keychain"
+      ? "macOS Keychain (AES-256)"
+      : vaultStatus?.protection_backend === "secret_service"
+      ? "Linux Secret Service (AES-256)"
+      : vaultStatus?.protection_backend === "local_machine"
+      ? "Локальное шифрование ОС (AES-256)"
+      : "Windows DPAPI";
 
   const handleEnableOrChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +101,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
     try {
       const ok = await onDisableMasterPassword(currentPassword);
       if (ok) {
-        onToast("info", "Мастер-пароль отключен. Хранилище переведено в режим Windows DPAPI.");
+        onToast("info", `Мастер-пароль отключен. Хранилище переведено в режим ${osBackendLabel}.`);
         await onRefreshStatus();
         onClose();
       } else {
@@ -258,7 +266,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
                   lineHeight: "1.45",
                 }}
               >
-                Сейчас используется шифрование <strong>Windows DPAPI</strong>. Установка мастер-пароля переводит базу в режим <strong>Zero-Knowledge</strong>: даже при доступе к вашему компьютеру никто не сможет прочитать пароли без знания мастер-пароля.
+                Сейчас используется шифрование <strong>{osBackendLabel}</strong>. Установка мастер-пароля переводит базу в режим <strong>Zero-Knowledge</strong>: даже при доступе к вашему компьютеру никто не сможет прочитать пароли без знания мастер-пароля.
               </div>
             )}
 
@@ -352,7 +360,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
                 lineHeight: "1.45",
               }}
             >
-              Вы собираетесь отключить мастер-пароль. База серверов будет переведена в режим прозрачного шифрования <strong>Windows DPAPI</strong> (без запроса паролей при старте).
+              Вы собираетесь отключить мастер-пароль. База серверов будет переведена в режим прозрачного шифрования <strong>{osBackendLabel}</strong> (без запроса паролей при старте).
             </div>
 
             <div>

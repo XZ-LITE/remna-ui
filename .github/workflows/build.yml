@@ -1,0 +1,189 @@
+name: Build Multi-OS (Windows, Linux, macOS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional tag name if creating a draft/manual test"
+        required: false
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows (amd64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails v3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+
+      - name: Generate Wails bindings
+        run: wails3 generate bindings -ts
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Windows Executable
+        run: |
+          mkdir -Force build/bin
+          go build -ldflags="-H windowsgui -s -w" -o build/bin/remna-ui-windows-amd64.exe .
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remna-ui-windows-amd64
+          path: build/bin/remna-ui-windows-amd64.exe
+
+  build-linux:
+    name: Linux (amd64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux GTK/WebKit2GTK dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run Go Unit Tests
+        run: go test ./internal/admin ./internal/crypto ./internal/dns ./internal/generator ./internal/probe ./internal/ssh ./internal/vault
+
+      - name: Build Linux Binary
+        run: |
+          mkdir -p build/bin
+          go build -ldflags="-s -w" -o build/bin/remna-ui-linux-amd64 .
+          tar -C build/bin -czf build/bin/remna-ui-linux-amd64.tar.gz remna-ui-linux-amd64
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remna-ui-linux-amd64
+          path: build/bin/remna-ui-linux-amd64.tar.gz
+
+  build-macos:
+    name: macOS (Universal arm64 + amd64)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache-dependency-path: go.sum
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run Go Unit Tests
+        run: go test ./internal/admin ./internal/crypto ./internal/dns ./internal/generator ./internal/probe ./internal/ssh ./internal/vault
+
+      - name: Build macOS Universal App Bundle
+        run: |
+          mkdir -p build/bin/arm64 build/bin/amd64 "build/bin/Remnawave Manager.app/Contents/MacOS" "build/bin/Remnawave Manager.app/Contents/Resources"
+          CGO_ENABLED=1 GOARCH=arm64 go build -ldflags="-s -w" -o build/bin/arm64/remna-ui .
+          CGO_ENABLED=1 GOARCH=amd64 go build -ldflags="-s -w" -o build/bin/amd64/remna-ui .
+          lipo -create -output "build/bin/Remnawave Manager.app/Contents/MacOS/remna-ui" build/bin/arm64/remna-ui build/bin/amd64/remna-ui
+          chmod +x "build/bin/Remnawave Manager.app/Contents/MacOS/remna-ui"
+          cat > "build/bin/Remnawave Manager.app/Contents/Info.plist" << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>remna-ui</string>
+            <key>CFBundleIdentifier</key>
+            <string>org.remnawave.ui</string>
+            <key>CFBundleName</key>
+            <string>Remnawave Manager</string>
+            <key>CFBundleDisplayName</key>
+            <string>Remnawave Manager</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>3.0.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          cd build/bin && zip -r remna-ui-macos-universal.zip "Remnawave Manager.app"
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remna-ui-macos-universal
+          path: build/bin/remna-ui-macos-universal.zip
+
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-linux, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/remna-ui-windows-amd64/*
+            artifacts/remna-ui-linux-amd64/*
+            artifacts/remna-ui-macos-universal/*

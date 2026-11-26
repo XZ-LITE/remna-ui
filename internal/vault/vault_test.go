@@ -2,7 +2,6 @@ package vault
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -122,5 +121,30 @@ func TestVaultLifecycle(t *testing.T) {
 	status = mgr.GetStatus()
 	if status.Enabled {
 		t.Fatalf("expected vault to be disabled after DisableMasterPassword")
+	}
+}
+
+func TestLocalMachineEncryption(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "remna_local_crypto_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	secret := "ssh-password-example-123"
+	enc := encryptLocalMachine(tempDir, "machine-abc-001", secret)
+	if !strings.HasPrefix(enc, prefixLocal) {
+		t.Fatalf("expected %s prefix, got %q", prefixLocal, enc)
+	}
+
+	dec := decryptLocalMachine(tempDir, "machine-abc-001", enc)
+	if dec != secret {
+		t.Fatalf("decryptLocalMachine got %q, want %q", dec, secret)
+	}
+
+	// Wrong machine ID must NOT decrypt successfully
+	wrong := decryptLocalMachine(tempDir, "machine-other-999", enc)
+	if wrong == secret {
+		t.Fatalf("expected wrong machine ID not to decrypt secret")
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	runtimeOS "runtime"
 	"strings"
-	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"remna-ui/internal/admin"
@@ -218,7 +217,7 @@ func (a *App) OpenBrowserURL(rawURL string) {
 	}
 	if runtimeOS.GOOS == "windows" {
 		cmd := exec.Command("cmd", "/c", "start", "", clean)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		hideCmdWindow(cmd)
 		if err := cmd.Start(); err == nil {
 			return
 		}

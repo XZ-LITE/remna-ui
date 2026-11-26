@@ -1377,6 +1377,11 @@ export class VaultStatus {
      * "dpapi" or "master_password"
      */
     "mode": string;
+
+    /**
+     * "dpapi", "keychain", "secret_service", "local_machine", "master_password"
+     */
+    "protection_backend"?: string;
     "auto_lock_minutes": number;
     "has_saved_servers": boolean;
     "message"?: string;

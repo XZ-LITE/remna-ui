@@ -95,12 +95,13 @@ type SavedServer struct {
 }
 
 type VaultStatus struct {
-	Enabled         bool   `json:"enabled"`
-	Unlocked        bool   `json:"unlocked"`
-	Mode            string `json:"mode"` // "dpapi" or "master_password"
-	AutoLockMinutes int    `json:"auto_lock_minutes"`
-	HasSavedServers bool   `json:"has_saved_servers"`
-	Message         string `json:"message,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	Unlocked          bool   `json:"unlocked"`
+	Mode              string `json:"mode"`                         // "dpapi" or "master_password"
+	ProtectionBackend string `json:"protection_backend,omitempty"` // "dpapi", "keychain", "secret_service", "local_machine", "master_password"
+	AutoLockMinutes   int    `json:"auto_lock_minutes"`
+	HasSavedServers   bool   `json:"has_saved_servers"`
+	Message           string `json:"message,omitempty"`
 }
 
 type ContainerInfo struct {

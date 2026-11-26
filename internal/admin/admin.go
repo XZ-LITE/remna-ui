@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	"time"
 
@@ -39,23 +38,7 @@ import (
 
 
 
-type dataBlob struct {
-
-	cbData uint32
-
-	pbData *byte
-
-}
-
-
-
 var (
-
-	crypt32                 = syscall.NewLazyDLL("crypt32.dll")
-
-	procCryptProtectData   = crypt32.NewProc("CryptProtectData")
-
-	procCryptUnprotectData = crypt32.NewProc("CryptUnprotectData")
 
 	validContainerRegex    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
 
@@ -92,7 +75,10 @@ func isValidContainerName(name string) bool {
 
 
 func getStorePath() string {
-	appData := os.Getenv("APPDATA")
+	appData, err := os.UserConfigDir()
+	if err != nil || appData == "" {
+		appData = os.Getenv("APPDATA")
+	}
 	if appData == "" {
 		home, _ := os.UserHomeDir()
 		appData = filepath.Join(home, ".config")

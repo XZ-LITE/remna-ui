@@ -871,12 +871,25 @@ export function App() {
     }
   };
 
+  const osProtectionLabel = useMemo(() => {
+    switch (vaultStatus?.protection_backend) {
+      case "keychain":
+        return "macOS Keychain + AES-256-GCM";
+      case "secret_service":
+        return "Linux Secret Service + AES-256-GCM";
+      case "local_machine":
+        return "Локальное шифрование (AES-256-GCM)";
+      default:
+        return "Windows DPAPI (CryptProtectData)";
+    }
+  }, [vaultStatus?.protection_backend]);
+
   const handleCopySystemInfo = () => {
     const info = `Remnawave Deployment & Manager Suite
-Версия: 2.0.0 (WinUI 3 Fluent Edition)
-Стек: Go 1.27 + Wails v3 + React 19 + TypeScript + WebView2
-Платформа: Windows 11 / x64
-Хранилище: Windows DPAPI (enc:dpapi)`;
+Версия: 2.0.0 (Fluent Edition)
+Стек: Go 1.27 + Wails v3 + React 19 + TypeScript
+Платформа: ${navigator.platform || "Desktop"}
+Хранилище: ${vaultStatus?.enabled ? "Мастер-пароль (Argon2id + AES-256-GCM)" : osProtectionLabel}`;
     navigator.clipboard.writeText(info).then(() => {
       addToast("info", "Сведения о системе скопированы в буфер обмена!");
     });
@@ -3425,7 +3438,7 @@ export function App() {
                 </WinTooltip>
               )
             ) : (
-              <WinTooltip content="Безопасность: данные защищены Windows DPAPI. Нажмите для настройки">
+              <WinTooltip content={`Безопасность: данные защищены (${osProtectionLabel}). Нажмите для настройки`}>
                 <button
                   type="button"
                   className="win-commandbar-btn"
@@ -7103,12 +7116,12 @@ export function App() {
                       </div>
                       <div className="settings-card-text">
                         <div className="settings-card-title">
-                          Шифрование локальных секретов: {vaultStatus?.enabled ? "Мастер-пароль (Argon2id + AES-256-GCM)" : "Windows DPAPI (CryptProtectData)"}
+                          Шифрование локальных секретов: {vaultStatus?.enabled ? "Мастер-пароль (Argon2id + AES-256-GCM)" : osProtectionLabel}
                         </div>
                         <div className="settings-card-desc">
                           {vaultStatus?.enabled
                             ? `База серверов и API-токены зашифрованы мастер-паролем. Автоблокировка: ${vaultStatus.auto_lock_minutes > 0 ? `${vaultStatus.auto_lock_minutes} мин.` : "отключена"}.`
-                            : "Пароли серверов, ключи и токены защищены системным аппаратным шифрованием Windows DPAPI."}
+                            : `Пароли серверов, ключи и токены защищены системным шифрованием (${osProtectionLabel}).`}
                         </div>
                       </div>
                     </div>
