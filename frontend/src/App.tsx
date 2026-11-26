@@ -212,6 +212,7 @@ import { VaultUnlockModal } from "./components/modals/VaultUnlockModal";
 import { VaultSettingsModal } from "./components/modals/VaultSettingsModal";
 import { WinModal } from "./components/ui/WinModal";
 import { WinTooltip } from "./components/ui/WinTooltip";
+import { WinConfirmModal } from "./components/ui/WinConfirmModal";
 
 import { SettingsCard } from "./components/ui/SettingsCard";
 
@@ -931,6 +932,17 @@ export function App() {
 
   } | null>(null);
 
+  // Generic Fluent Confirmation Modal (replaces native window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    description: React.ReactNode;
+    details?: React.ReactNode;
+    confirmLabel: string;
+    variant: "primary" | "warning" | "danger";
+    loading?: boolean;
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
+
 
 
   // Active sub-tab for each server card
@@ -1419,25 +1431,32 @@ export function App() {
   };
 
   // Safe Smart Clean Disk for Server
-  const handleCleanServerDisk = async (srv: types.SavedServer) => {
-    if (!window.confirm(`Выполнить безопасную очистку диска на ${srv.label || srv.host}?\n\nБудут удалены неиспользуемые слои Docker (без удаления данных БД и томов), очищены кэши сборщика, усечены системные логи journalctl до 2 дней / 100 МБ и удалены временные файлы.`)) {
-      return;
-    }
-    setCleaningDiskServerId(srv.id);
-    addToast("info", `Запущена безопасная очистка диска на ${srv.label || srv.host}...`);
-    try {
-      const res = await CleanServerDisk(srv, srv.password || "");
-      if (res && res.success) {
-        addToast("success", `Диск сервера очищен! ${res.freed_space || "Операция завершена успешно."}`);
-        handleInspectServer(srv);
-      } else {
-        addToast("error", `Не удалось очистить диск: ${res?.error || res?.output || "Неизвестная ошибка"}`);
-      }
-    } catch (err: any) {
-      addToast("error", `Ошибка выполнения очистки: ${err}`);
-    } finally {
-      setCleaningDiskServerId(null);
-    }
+  const handleCleanServerDisk = (srv: types.SavedServer) => {
+    setConfirmModal({
+      title: `Очистка диска: ${srv.label || srv.host}`,
+      description: "Выполнить безопасную очистку диска на этом сервере?",
+      details: "Будут удалены неиспользуемые слои Docker (без удаления данных БД и томов), очищены кэши сборщика, усечены системные логи journalctl до 2 дней / 100 МБ и удалены временные файлы.",
+      confirmLabel: "Очистить диск",
+      variant: "warning",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setCleaningDiskServerId(srv.id);
+        addToast("info", `Запущена безопасная очистка диска на ${srv.label || srv.host}...`);
+        try {
+          const res = await CleanServerDisk(srv, srv.password || "");
+          if (res && res.success) {
+            addToast("success", `Диск сервера очищен! ${res.freed_space || "Операция завершена успешно."}`);
+            handleInspectServer(srv);
+          } else {
+            addToast("error", `Не удалось очистить диск: ${res?.error || res?.output || "Неизвестная ошибка"}`);
+          }
+        } catch (err: any) {
+          addToast("error", `Ошибка выполнения очистки: ${err}`);
+        } finally {
+          setCleaningDiskServerId(null);
+        }
+      },
+    });
   };
 
 
@@ -2597,45 +2616,37 @@ export function App() {
 
 
   // Reset Superadmin
-
-  const handleResetSuperadmin = async (srv: types.SavedServer) => {
-
-    if (!window.confirm("Вы уверены, что хотите сбросить супер-администратора? После сброса панель предложит пройти первичную регистрацию нового админа.")) {
-
-      return;
-
-    }
-
-    const key = `reset-admin-${srv.id}`;
-
-    setActionLoading((prev) => ({ ...prev, [key]: true }));
-
-    try {
-
-      const res = await ResetSuperadmin(srv);
-
-      if (res.success) {
-
-        addToast("success", "Супер-администратор Remnawave успешно сброшен!");
-
-        handleInspectServer(srv);
-
-      } else {
-
-        addToast("error", `Ошибка: ${res.error}`);
-
-      }
-
-    } catch (e: any) {
-
-      addToast("error", `Сбой: ${e}`);
-
-    } finally {
-
-      setActionLoading((prev) => ({ ...prev, [key]: false }));
-
-    }
-
+  const handleResetSuperadmin = (srv: types.SavedServer) => {
+    setConfirmModal({
+      title: "Сброс супер-администратора",
+      description: (
+        <>
+          Вы уверены, что хотите сбросить супер-администратора на сервере{" "}
+          <strong>{srv.label || srv.host}</strong>?
+        </>
+      ),
+      details: "После сброса при следующем открытии панели Remnawave предложит пройти первичную регистрацию нового администратора.",
+      confirmLabel: "Сбросить админа",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        const key = `reset-admin-${srv.id}`;
+        setActionLoading((prev) => ({ ...prev, [key]: true }));
+        try {
+          const res = await ResetSuperadmin(srv);
+          if (res.success) {
+            addToast("success", "Супер-администратор Remnawave успешно сброшен!");
+            handleInspectServer(srv);
+          } else {
+            addToast("error", `Ошибка: ${res.error}`);
+          }
+        } catch (e: any) {
+          addToast("error", `Сбой: ${e}`);
+        } finally {
+          setActionLoading((prev) => ({ ...prev, [key]: false }));
+        }
+      },
+    });
   };
 
 
@@ -3064,15 +3075,31 @@ export function App() {
 
 
   // Delete Server
-
   const handleDeleteServer = async (id: string) => {
-
     await DeleteServer(id);
-
     loadServers();
-
     addToast("info", "Сервер удален из каталога");
+  };
 
+  // Interactive Delete Server with Fluent confirmation
+  const handleRequestDeleteServer = (id: string) => {
+    const srv = savedServers.find((s) => s.id === id);
+    const label = srv?.label || srv?.host || id;
+    setConfirmModal({
+      title: "Удалить сервер из каталога?",
+      description: (
+        <>
+          Сервер <strong>{label}</strong> будет удален из локального каталога программы.
+        </>
+      ),
+      details: "Сам сервер (VPS), Docker-контейнеры и база данных на удаленном хосте останутся нетронутыми.",
+      confirmLabel: "Удалить из каталога",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        await handleDeleteServer(id);
+      },
+    });
   };
 
 
@@ -3148,21 +3175,15 @@ export function App() {
 
         <div className="brand-header">
 
-          <button
-
-            type="button"
-
-            className="sidebar-toggle-btn"
-
-            title={sidebarCollapsed ? "Развернуть панель (Ctrl+B)" : "Свернуть панель (Ctrl+B)"}
-
-            onClick={toggleSidebar}
-
-          >
-
-            <Menu size={16} />
-
-          </button>
+          <WinTooltip content={sidebarCollapsed ? "Развернуть панель" : "Свернуть панель"} shortcut="Ctrl+B" placement="right">
+            <button
+              type="button"
+              className="sidebar-toggle-btn"
+              onClick={toggleSidebar}
+            >
+              <Menu size={16} />
+            </button>
+          </WinTooltip>
 
           {!sidebarCollapsed && (
 
@@ -3193,95 +3214,68 @@ export function App() {
         <div className="nav-section-title">Разделы</div>
 
         <nav className="nav-list">
+          <WinTooltip content="Мастер установки" placement="right" disabled={!sidebarCollapsed}>
+            <div
+              className={`nav-item ${activeTab === "wizard" ? "active" : ""}`}
+              onClick={() => setActiveTab("wizard")}
+            >
+              <span className="nav-item-icon"><Layers size={16} /></span>
+              <span>Мастер установки</span>
+            </div>
+          </WinTooltip>
 
-          <div
+          <WinTooltip content={`Мои серверы ${savedServers.length > 0 ? `(${savedServers.length})` : ""}`} placement="right" disabled={!sidebarCollapsed}>
+            <div
+              className={`nav-item ${activeTab === "servers" ? "active" : ""}`}
+              onClick={() => setActiveTab("servers")}
+            >
+              <span className="nav-item-icon"><Server size={16} /></span>
+              <span>Мои серверы</span>
+              {savedServers.length > 0 && <span className="nav-badge">{savedServers.length}</span>}
+            </div>
+          </WinTooltip>
 
-            className={`nav-item ${activeTab === "wizard" ? "active" : ""}`}
-
-            title="Мастер установки"
-
-            onClick={() => setActiveTab("wizard")}
-
-          >
-
-            <span className="nav-item-icon"><Layers size={16} /></span>
-
-            <span>Мастер установки</span>
-
-          </div>
-
-
-
-          <div
-
-            className={`nav-item ${activeTab === "servers" ? "active" : ""}`}
-
-            title={`Мои серверы ${savedServers.length > 0 ? `(${savedServers.length})` : ""}`}
-
-            onClick={() => setActiveTab("servers")}
-
-          >
-
-            <span className="nav-item-icon"><Server size={16} /></span>
-
-            <span>Мои серверы</span>
-
-            {savedServers.length > 0 && <span className="nav-badge">{savedServers.length}</span>}
-
-          </div>
-
-
-
-          <div
-
-            className={`nav-item ${activeTab === "about" ? "active" : ""}`}
-
-            title="О программе"
-
-            onClick={() => setActiveTab("about")}
-
-          >
-
-            <span className="nav-item-icon"><Info size={16} /></span>
-
-            <span>О программе</span>
-
-          </div>
-
+          <WinTooltip content="О программе" placement="right" disabled={!sidebarCollapsed}>
+            <div
+              className={`nav-item ${activeTab === "about" ? "active" : ""}`}
+              onClick={() => setActiveTab("about")}
+            >
+              <span className="nav-item-icon"><Info size={16} /></span>
+              <span>О программе</span>
+            </div>
+          </WinTooltip>
         </nav>
 
-
-
         <div className="sidebar-footer">
-
-          <div
-            className="nav-item"
-            title="Безопасность локальных секретов"
-            onClick={() => setVaultSettingsOpen(true)}
-          >
-            <span className="nav-item-icon">
-              {vaultStatus?.enabled ? (
-                vaultStatus.unlocked ? (
-                  <KeyRound size={15} style={{ color: "var(--win-accent-primary)" }} />
+          <WinTooltip content="Безопасность локальных секретов" placement="right" disabled={!sidebarCollapsed}>
+            <div
+              className="nav-item"
+              onClick={() => setVaultSettingsOpen(true)}
+            >
+              <span className="nav-item-icon">
+                {vaultStatus?.enabled ? (
+                  vaultStatus.unlocked ? (
+                    <KeyRound size={15} style={{ color: "var(--win-accent-primary)" }} />
+                  ) : (
+                    <Lock size={15} style={{ color: "#ef4444" }} />
+                  )
                 ) : (
-                  <Lock size={15} style={{ color: "#ef4444" }} />
-                )
-              ) : (
-                <ShieldCheck size={15} style={{ color: "#10b981" }} />
-              )}
-            </span>
-            <span>Безопасность</span>
-          </div>
+                  <ShieldCheck size={15} style={{ color: "#10b981" }} />
+                )}
+              </span>
+              <span>Безопасность</span>
+            </div>
+          </WinTooltip>
 
-          <div
-            className="nav-item"
-            title="Официальная документация Remnawave"
-            onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
-          >
-            <span className="nav-item-icon"><ExternalLink size={15} /></span>
-            <span>Документация Remna</span>
-          </div>
-
+          <WinTooltip content="Официальная документация Remnawave" placement="right" disabled={!sidebarCollapsed}>
+            <div
+              className="nav-item"
+              onClick={() => OpenBrowserURL("https://docs.rw/overview/quick-start/")}
+            >
+              <span className="nav-item-icon"><ExternalLink size={15} /></span>
+              <span>Документация Remna</span>
+            </div>
+          </WinTooltip>
         </div>
 
       </aside>
@@ -4973,16 +4967,17 @@ export function App() {
                                         onChange={(e) => setAdminPassword(e.target.value)}
                                         placeholder="Минимум 24 символа (Aa1...)"
                                         extraAction={
-                                          <button
-                                            type="button"
-                                            tabIndex={-1}
-                                            className="win-password-toggle"
-                                            onMouseDown={(e) => e.preventDefault()}
-                                            onClick={generateClientSafePassword}
-                                            title="Сгенерировать надежный пароль"
-                                          >
-                                            <Dices size={14} />
-                                          </button>
+                                          <WinTooltip content="Сгенерировать надежный пароль">
+                                            <button
+                                              type="button"
+                                              tabIndex={-1}
+                                              className="win-password-toggle"
+                                              onMouseDown={(e) => e.preventDefault()}
+                                              onClick={generateClientSafePassword}
+                                            >
+                                              <Dices size={14} />
+                                            </button>
+                                          </WinTooltip>
                                         }
                                       />
                                     </div>
@@ -5653,23 +5648,16 @@ export function App() {
 
                                 {sshKey && (
 
-                                  <button
-
-                                    type="button"
-
-                                    className="win-button"
-
-                                    onClick={() => setSshKey("")}
-
-                                    title="Очистить путь к ключу"
-
-                                    style={{ height: "30px", padding: "0 8px" }}
-
-                                  >
-
-                                    <X size={13} />
-
-                                  </button>
+                                  <WinTooltip content="Очистить путь к ключу">
+                                    <button
+                                      type="button"
+                                      className="win-button"
+                                      onClick={() => setSshKey("")}
+                                      style={{ height: "30px", padding: "0 8px" }}
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </WinTooltip>
 
                                 )}
 
@@ -5869,15 +5857,16 @@ export function App() {
                                         <span>VPN: {wizardIPResult.client_country}</span>
                                       </span>
                                     )}
-                                    <button
-                                      type="button"
-                                      className="win-button"
-                                      style={{ height: "22px", padding: "0 6px", fontSize: "11px" }}
-                                      onClick={() => setWizardIPResult(null)}
-                                      title="Закрыть отчет"
-                                    >
-                                      <X size={11} />
-                                    </button>
+                                    <WinTooltip content="Закрыть отчет">
+                                      <button
+                                        type="button"
+                                        className="win-button"
+                                        style={{ height: "22px", padding: "0 6px", fontSize: "11px" }}
+                                        onClick={() => setWizardIPResult(null)}
+                                      >
+                                        <X size={11} />
+                                      </button>
+                                    </WinTooltip>
                                   </div>
                                 </div>
 
@@ -6859,7 +6848,7 @@ export function App() {
                           handleStartEditServer={handleStartEditServer}
                           setReinstallModal={setReinstallModal}
                           setUninstallModal={setUninstallModal}
-                          handleDeleteServer={handleDeleteServer}
+                          handleDeleteServer={handleRequestDeleteServer}
                           handleCreateBackup={handleCreateBackup}
                           handleDownloadBackup={handleDownloadBackup}
                           setRestoreModal={setRestoreModal}
@@ -7570,6 +7559,21 @@ export function App() {
         onToast={addToast}
         onRefreshStatus={async () => { await checkVaultStatus(); }}
       />
+
+      {/* Modal: Fluent Confirmation */}
+      {confirmModal && (
+        <WinConfirmModal
+          isOpen={true}
+          title={confirmModal.title}
+          description={confirmModal.description}
+          details={confirmModal.details}
+          confirmLabel={confirmModal.confirmLabel}
+          variant={confirmModal.variant}
+          loading={confirmModal.loading}
+          onConfirm={confirmModal.onConfirm}
+          onClose={() => setConfirmModal(null)}
+        />
+      )}
 
     </div>
 

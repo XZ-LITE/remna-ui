@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Radio, Terminal as TerminalIcon, Check, Copy, X, Zap, RefreshCw, ExternalLink } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface NodeSecretModalProps {
   server: types.SavedServer;
@@ -85,14 +86,15 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
                 <span>Открыть веб-панель</span>
               </button>
             )}
-            <button
-              className="win-button"
-              style={{ padding: "0 8px", height: "26px" }}
-              onClick={() => !loading && close()}
-              title="Закрыть окно"
-            >
-              <X size={14} />
-            </button>
+            <WinTooltip content="Закрыть" shortcut="Esc">
+              <button
+                className="win-button"
+                style={{ padding: "0 8px", height: "26px" }}
+                onClick={() => !loading && close()}
+              >
+                <X size={14} />
+              </button>
+            </WinTooltip>
           </div>
         </div>
 

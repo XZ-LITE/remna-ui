@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface IPProbeItem {
   node_id: string;
@@ -125,14 +126,15 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            className="win-modal-close"
-            disabled={loading}
-            onClick={close}
-            title="Закрыть"
-          >
-            <X size={15} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button
+              className="win-modal-close"
+              disabled={loading}
+              onClick={close}
+            >
+              <X size={15} />
+            </button>
+          </WinTooltip>
         </div>
 
         {/* Body */}
@@ -403,7 +405,7 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
                 title="Скопировать текстовый отчет в буфер обмена"
                 style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
-                {copied ? <Check size={13} style={{ color: "var(--win-success)" }} /> : <Copy size={13} />}
+                {copied ? <Check size={13} style={{ color: "var(--win-status-success)" }} /> : <Copy size={13} />}
                 <span>{copied ? "Скопировано" : "Скопировать отчет"}</span>
               </button>
             )}

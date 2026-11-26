@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useRef } from "react";
 import {
   Server,
   Radio,
@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinTooltip } from "../ui/WinTooltip";
+import { WinActionMenu } from "../ui/WinActionMenu";
 
 const isIpAddress = (val: string) => /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test((val || "").trim());
 
@@ -131,6 +132,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
   handleResetSuperadmin,
   handleToggleAntiAbuse,
 }) => {
+                      const moreMenuAnchorRef = useRef<HTMLButtonElement | null>(null);
                       const webUrl = srv.role === "node" ? "" : (srv.web_url || "");
 
                       const runningCount = status?.containers?.filter((c) => c.running).length || 0;
@@ -331,14 +333,15 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
                                 {isMaster ? (
                                   webUrl && (
-                                    <button
-                                      className="win-button hero-primary"
-                                      onClick={() => handleOpenBrowser(webUrl)}
-                                      title={`Открыть веб-панель: ${webUrl}`}
-                                    >
-                                      <ExternalLink size={14} />
-                                      <span>Открыть панель</span>
-                                    </button>
+                                    <WinTooltip content={`Открыть веб-панель: ${webUrl}`}>
+                                      <button
+                                        className="win-button hero-primary"
+                                        onClick={() => handleOpenBrowser(webUrl)}
+                                      >
+                                        <ExternalLink size={14} />
+                                        <span>Открыть панель</span>
+                                      </button>
+                                    </WinTooltip>
                                   )
                                 ) : (
                                   <WinTooltip content="Запустить диагностику и аудит защиты ноды">
@@ -370,6 +373,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                 <div className="server-actions-wrapper">
                                   <WinTooltip content="Дополнительные действия...">
                                     <button
+                                      ref={moreMenuAnchorRef}
                                       className={`win-button toolbar-action-btn icon-only ${activeServerMenu === srv.id ? "active" : ""}`}
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -380,11 +384,11 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                     </button>
                                   </WinTooltip>
 
-                                  {activeServerMenu === srv.id && (
-                                    <div
-                                      className="server-more-menu"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
+                                  <WinActionMenu
+                                    isOpen={activeServerMenu === srv.id}
+                                    anchorRef={moreMenuAnchorRef}
+                                    onClose={() => setActiveServerMenu(null)}
+                                  >
                                       {isMaster ? (
                                         <>
                                           <button
@@ -580,8 +584,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                         <Trash2 size={14} />
                                         <span>Удалить только из каталога</span>
                                       </button>
-                                    </div>
-                                  )}
+                                  </WinActionMenu>
                                 </div>
                               </div>
                             </div>
@@ -649,14 +652,15 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
 
                                 <div className="server-toolbar-actions">
                                   {isMaster && (
-                                    <button
-                                      className="win-button toolbar-action-btn"
-                                      onClick={() => handleAddNodeToPanel(srv)}
-                                      title="Развернуть новую ноду и связать её с этой мастер-панелью"
-                                    >
-                                      <Plus size={13} style={{ color: "var(--win-accent)" }} />
-                                      <span>Нода</span>
-                                    </button>
+                                    <WinTooltip content="Развернуть новую ноду и связать её с этой мастер-панелью">
+                                      <button
+                                        className="win-button toolbar-action-btn"
+                                        onClick={() => handleAddNodeToPanel(srv)}
+                                      >
+                                        <Plus size={13} style={{ color: "var(--win-accent)" }} />
+                                        <span>Нода</span>
+                                      </button>
+                                    </WinTooltip>
                                   )}
                                 </div>
                               </div>
@@ -674,25 +678,27 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                 <span>{status.error || "Нет ответа по SSH. Проверьте сеть, порт или обновите статус."}</span>
                               </div>
                               <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-                                <button
-                                  className="win-button"
-                                  style={{ height: "26px", fontSize: "11.5px" }}
-                                  disabled={isLoading}
-                                  onClick={() => handleInspectServer(srv)}
-                                  title="Повторить опрос состояния"
-                                >
-                                  <RefreshCw size={11} className={isLoading ? "animate-spin" : ""} />
-                                  <span>Повторить</span>
-                                </button>
-                                <button
-                                  className="win-button danger-subtle"
-                                  style={{ height: "26px", fontSize: "11.5px", color: "#f87171" }}
-                                  onClick={() => handleDeleteServer(srv.id)}
-                                  title="Удалить недоступный сервер из каталога"
-                                >
-                                  <Trash2 size={11} />
-                                  <span>Удалить</span>
-                                </button>
+                                <WinTooltip content="Повторить опрос состояния">
+                                  <button
+                                    className="win-button"
+                                    style={{ height: "26px", fontSize: "11.5px" }}
+                                    disabled={isLoading}
+                                    onClick={() => handleInspectServer(srv)}
+                                  >
+                                    <RefreshCw size={11} className={isLoading ? "animate-spin" : ""} />
+                                    <span>Повторить</span>
+                                  </button>
+                                </WinTooltip>
+                                <WinTooltip content="Удалить недоступный сервер из каталога">
+                                  <button
+                                    className="win-button danger-subtle"
+                                    style={{ height: "26px", fontSize: "11.5px", color: "#f87171" }}
+                                    onClick={() => handleDeleteServer(srv.id)}
+                                  >
+                                    <Trash2 size={11} />
+                                    <span>Удалить</span>
+                                  </button>
+                                </WinTooltip>
                               </div>
                             </div>
                           )}
@@ -796,26 +802,27 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                         <HardDrive size={12} style={{ color: "#38bdf8" }} />
                                         <span>Диск (/)</span>
                                       </div>
-                                      <button
-                                        style={{
-                                          padding: "1px 6px",
-                                          fontSize: "10px",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "3px",
-                                          border: "1px solid var(--win-border-light)",
-                                          borderRadius: "4px",
-                                          background: "transparent",
-                                          color: "var(--win-text-secondary)",
-                                          cursor: "pointer",
-                                        }}
-                                        disabled={cleaningDiskServerId === srv.id}
-                                        onClick={() => handleCleanServerDisk(srv)}
-                                        title="Безопасная очистка Docker-слоев и логов journalctl"
-                                      >
-                                        <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
-                                        <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
-                                      </button>
+                                      <WinTooltip content="Безопасная очистка Docker-слоев и логов journalctl">
+                                        <button
+                                          style={{
+                                            padding: "1px 6px",
+                                            fontSize: "10px",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "3px",
+                                            border: "1px solid var(--win-card-stroke)",
+                                            borderRadius: "4px",
+                                            background: "transparent",
+                                            color: "var(--win-text-secondary)",
+                                            cursor: "pointer",
+                                          }}
+                                          disabled={cleaningDiskServerId === srv.id}
+                                          onClick={() => handleCleanServerDisk(srv)}
+                                        >
+                                          <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
+                                          <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
+                                        </button>
+                                      </WinTooltip>
                                     </div>
                                     <div className="metric-value">
                                       {status.metrics.disk_used} / {status.metrics.disk_total}
@@ -920,35 +927,37 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                     <span className="badge">{runningCount} из {totalCount} в сети</span>
                                   </div>
                                   <div style={{ display: "flex", gap: "8px" }}>
-                                    <button
-                                      className="win-button"
-                                      style={{ height: "26px", fontSize: "11.5px" }}
-                                      disabled={actionLoading[`update-stack-${srv.id}`]}
-                                      onClick={() => handleUpdateStack(srv)}
-                                      title="Загрузить свежие Docker-образы Remnawave и перезапустить контейнеры"
-                                    >
-                                      {actionLoading[`update-stack-${srv.id}`] ? (
-                                        <RefreshCw size={12} className="animate-spin" />
-                                      ) : (
-                                        <Download size={12} style={{ color: "var(--win-accent)" }} />
-                                      )}
-                                      <span>Обновить образы</span>
-                                    </button>
+                                    <WinTooltip content="Загрузить свежие Docker-образы Remnawave и перезапустить контейнеры">
+                                      <button
+                                        className="win-button"
+                                        style={{ height: "26px", fontSize: "11.5px" }}
+                                        disabled={actionLoading[`update-stack-${srv.id}`]}
+                                        onClick={() => handleUpdateStack(srv)}
+                                      >
+                                        {actionLoading[`update-stack-${srv.id}`] ? (
+                                          <RefreshCw size={12} className="animate-spin" />
+                                        ) : (
+                                          <Download size={12} style={{ color: "var(--win-accent)" }} />
+                                        )}
+                                        <span>Обновить образы</span>
+                                      </button>
+                                    </WinTooltip>
 
-                                    <button
-                                      className="win-button"
-                                      style={{ height: "26px", fontSize: "11.5px" }}
-                                      disabled={actionLoading[`restart-all-${srv.id}`]}
-                                      onClick={() => handleRestartAll(srv)}
-                                      title="Перезапустить все контейнеры стека"
-                                    >
-                                      {actionLoading[`restart-all-${srv.id}`] ? (
-                                        <RefreshCw size={12} className="animate-spin" />
-                                      ) : (
-                                        <RotateCcw size={12} />
-                                      )}
-                                      <span>Перезапустить стек</span>
-                                    </button>
+                                    <WinTooltip content="Перезапустить все контейнеры стека">
+                                      <button
+                                        className="win-button"
+                                        style={{ height: "26px", fontSize: "11.5px" }}
+                                        disabled={actionLoading[`restart-all-${srv.id}`]}
+                                        onClick={() => handleRestartAll(srv)}
+                                      >
+                                        {actionLoading[`restart-all-${srv.id}`] ? (
+                                          <RefreshCw size={12} className="animate-spin" />
+                                        ) : (
+                                          <RotateCcw size={12} />
+                                        )}
+                                        <span>Перезапустить стек</span>
+                                      </button>
+                                    </WinTooltip>
                                   </div>
                                 </div>
 
@@ -1040,28 +1049,30 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                               </td>
                                               <td className="col-actions">
                                                 <div style={{ display: "inline-flex", gap: "6px", justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                                                  <button
-                                                    className="table-action-btn"
-                                                    disabled={actionLoading[`restart-${srv.id}-${c.name}`]}
-                                                    onClick={() => handleRestartContainer(srv, c.name)}
-                                                    title="Перезапустить контейнер"
-                                                  >
-                                                    {actionLoading[`restart-${srv.id}-${c.name}`] ? (
-                                                      <RefreshCw size={12} className="animate-spin" />
-                                                    ) : (
-                                                      <RotateCcw size={12} />
-                                                    )}
-                                                    <span>Рестарт</span>
-                                                  </button>
+                                                  <WinTooltip content="Перезапустить контейнер">
+                                                    <button
+                                                      className="table-action-btn"
+                                                      disabled={actionLoading[`restart-${srv.id}-${c.name}`]}
+                                                      onClick={() => handleRestartContainer(srv, c.name)}
+                                                    >
+                                                      {actionLoading[`restart-${srv.id}-${c.name}`] ? (
+                                                        <RefreshCw size={12} className="animate-spin" />
+                                                      ) : (
+                                                        <RotateCcw size={12} />
+                                                      )}
+                                                      <span>Рестарт</span>
+                                                    </button>
+                                                  </WinTooltip>
 
-                                                  <button
-                                                    className="table-action-btn"
-                                                    onClick={() => handleOpenLogsModal(srv, c.name)}
-                                                    title="Просмотр логов контейнера"
-                                                  >
-                                                    <TerminalIcon size={12} />
-                                                    <span>Логи</span>
-                                                  </button>
+                                                  <WinTooltip content="Просмотр логов контейнера">
+                                                    <button
+                                                      className="table-action-btn"
+                                                      onClick={() => handleOpenLogsModal(srv, c.name)}
+                                                    >
+                                                      <TerminalIcon size={12} />
+                                                      <span>Логи</span>
+                                                    </button>
+                                                  </WinTooltip>
                                                 </div>
                                               </td>
                                             </tr>
@@ -1100,25 +1111,27 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                       </div>
                                     </div>
                                     <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
-                                      <button
-                                        className="win-button"
-                                        style={{ height: "28px", fontSize: "11.5px" }}
-                                        disabled={isLoading}
-                                        onClick={() => handleInspectServer(srv)}
-                                        title="Повторить опрос состояния"
-                                      >
-                                        <RefreshCw size={12} className={isLoading ? "animate-spin" : ""} />
-                                        <span>Повторить опрос</span>
-                                      </button>
-                                      <button
-                                        className="win-button danger-subtle"
-                                        style={{ height: "28px", fontSize: "11.5px" }}
-                                        onClick={() => handleDeleteServer(srv.id)}
-                                        title="Удалить сервер из каталога"
-                                      >
-                                        <Trash2 size={12} />
-                                        <span>Удалить сервер</span>
-                                      </button>
+                                      <WinTooltip content="Повторить опрос состояния">
+                                        <button
+                                          className="win-button"
+                                          style={{ height: "28px", fontSize: "11.5px" }}
+                                          disabled={isLoading}
+                                          onClick={() => handleInspectServer(srv)}
+                                        >
+                                          <RefreshCw size={12} className={isLoading ? "animate-spin" : ""} />
+                                          <span>Повторить опрос</span>
+                                        </button>
+                                      </WinTooltip>
+                                      <WinTooltip content="Удалить сервер из каталога">
+                                        <button
+                                          className="win-button danger-subtle"
+                                          style={{ height: "28px", fontSize: "11.5px" }}
+                                          onClick={() => handleDeleteServer(srv.id)}
+                                        >
+                                          <Trash2 size={12} />
+                                          <span>Удалить сервер</span>
+                                        </button>
+                                      </WinTooltip>
                                     </div>
                                   </div>
                                 )}
@@ -1183,22 +1196,24 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                           </div>
                                         </div>
                                         <div className="backup-item-actions">
-                                          <button
-                                            className="table-action-btn"
-                                            onClick={() => handleDownloadBackup(srv, b.file_name)}
-                                            title="Скачать бэкап на компьютер"
-                                          >
-                                            <Download size={12} />
-                                            <span>Скачать</span>
-                                          </button>
-                                          <button
-                                            className="table-action-btn"
-                                            onClick={() => setRestoreModal({ server: srv, fileName: b.file_name })}
-                                            title="Восстановить БД из этой копии"
-                                          >
-                                            <RotateCcw size={12} />
-                                            <span>Восстановить</span>
-                                          </button>
+                                          <WinTooltip content="Скачать бэкап на компьютер">
+                                            <button
+                                              className="table-action-btn"
+                                              onClick={() => handleDownloadBackup(srv, b.file_name)}
+                                            >
+                                              <Download size={12} />
+                                              <span>Скачать</span>
+                                            </button>
+                                          </WinTooltip>
+                                          <WinTooltip content="Восстановить БД из этой копии">
+                                            <button
+                                              className="table-action-btn"
+                                              onClick={() => setRestoreModal({ server: srv, fileName: b.file_name })}
+                                            >
+                                              <RotateCcw size={12} />
+                                              <span>Восстановить</span>
+                                            </button>
+                                          </WinTooltip>
                                         </div>
                                       </div>
                                     ))}
@@ -1476,26 +1491,27 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                         <HardDrive size={12} style={{ color: "#38bdf8" }} />
                                         <span>Диск (/)</span>
                                       </div>
-                                      <button
-                                        style={{
-                                          padding: "1px 6px",
-                                          fontSize: "10px",
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "3px",
-                                          border: "1px solid var(--win-border-light)",
-                                          borderRadius: "4px",
-                                          background: "transparent",
-                                          color: "var(--win-text-secondary)",
-                                          cursor: "pointer",
-                                        }}
-                                        disabled={cleaningDiskServerId === srv.id}
-                                        onClick={() => handleCleanServerDisk(srv)}
-                                        title="Безопасная очистка Docker-слоев и логов journalctl"
-                                      >
-                                        <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
-                                        <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
-                                      </button>
+                                      <WinTooltip content="Безопасная очистка Docker-слоев и логов journalctl">
+                                        <button
+                                          style={{
+                                            padding: "1px 6px",
+                                            fontSize: "10px",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "3px",
+                                            border: "1px solid var(--win-card-stroke)",
+                                            borderRadius: "4px",
+                                            background: "transparent",
+                                            color: "var(--win-text-secondary)",
+                                            cursor: "pointer",
+                                          }}
+                                          disabled={cleaningDiskServerId === srv.id}
+                                          onClick={() => handleCleanServerDisk(srv)}
+                                        >
+                                          <Trash2 size={9} className={cleaningDiskServerId === srv.id ? "animate-spin" : ""} />
+                                          <span>{cleaningDiskServerId === srv.id ? "Очистка..." : "Очистить"}</span>
+                                        </button>
+                                      </WinTooltip>
                                     </div>
                                     <div className="metric-value">
                                       {status.metrics.disk_used} / {status.metrics.disk_total}
@@ -1617,15 +1633,16 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                   </div>
                                 </div>
                                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                  <button
-                                    className="win-button"
-                                    style={{ height: "34px", fontSize: "12.5px" }}
-                                    onClick={() => handleOpenVPNProbeModal(srv)}
-                                    title="Синтетическая проверка реального VPN-трафика и детекция блокировок ТСПУ"
-                                  >
-                                    <Activity size={14} style={{ color: "#c084fc" }} />
-                                    <span>Тест VPN-трафика</span>
-                                  </button>
+                                  <WinTooltip content="Синтетическая проверка реального VPN-трафика и детекция блокировок ТСПУ">
+                                    <button
+                                      className="win-button"
+                                      style={{ height: "34px", fontSize: "12.5px" }}
+                                      onClick={() => handleOpenVPNProbeModal(srv)}
+                                    >
+                                      <Activity size={14} style={{ color: "#c084fc" }} />
+                                      <span>Тест VPN-трафика</span>
+                                    </button>
+                                  </WinTooltip>
                                   <button
                                     className="win-button hero-primary"
                                     style={{ height: "34px", fontSize: "12.5px" }}

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { AlertTriangle, X, RefreshCw, RotateCcw, Database, FileText, Layers, ShieldCheck } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface RestoreBackupModalProps {
   server: types.SavedServer;
@@ -47,13 +48,15 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            className="win-modal-close"
-            disabled={loading}
-            onClick={close}
-          >
-            <X size={15} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button
+              className="win-modal-close"
+              disabled={loading}
+              onClick={close}
+            >
+              <X size={15} />
+            </button>
+          </WinTooltip>
         </div>
 
         <div className="win-modal-body" style={{ display: "flex", flexDirection: "column", gap: "14px", padding: "18px 22px" }}>
@@ -61,7 +64,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
             <div style={{ fontSize: "12px", color: "var(--win-text-secondary)", marginBottom: "4px" }}>
               Выбранный архив резервной копии:
             </div>
-            <div style={{ background: "rgba(255,255,255,0.04)", padding: "10px 14px", borderRadius: "6px", border: "1px solid var(--win-border-light)", fontFamily: "monospace", fontSize: "12px", color: "#38bdf8", wordBreak: "break-all" }}>
+            <div style={{ background: "rgba(255,255,255,0.04)", padding: "10px 14px", borderRadius: "6px", border: "1px solid var(--win-card-stroke)", fontFamily: "monospace", fontSize: "12px", color: "#38bdf8", wordBreak: "break-all" }}>
               {fileName}
             </div>
           </div>
@@ -79,7 +82,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
                   gap: "10px",
                   padding: "10px 12px",
                   borderRadius: "6px",
-                  border: scope === "all" ? "1px solid var(--win-accent)" : "1px solid var(--win-border-light)",
+                  border: scope === "all" ? "1px solid var(--win-accent)" : "1px solid var(--win-card-stroke)",
                   background: scope === "all" ? "rgba(0, 120, 212, 0.08)" : "var(--win-card-bg)",
                   cursor: "pointer",
                 }}
@@ -111,7 +114,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
                   gap: "10px",
                   padding: "10px 12px",
                   borderRadius: "6px",
-                  border: scope === "db_only" ? "1px solid #10b981" : "1px solid var(--win-border-light)",
+                  border: scope === "db_only" ? "1px solid #10b981" : "1px solid var(--win-card-stroke)",
                   background: scope === "db_only" ? "rgba(16, 185, 129, 0.08)" : "var(--win-card-bg)",
                   cursor: "pointer",
                 }}
@@ -143,7 +146,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
                   gap: "10px",
                   padding: "10px 12px",
                   borderRadius: "6px",
-                  border: scope === "configs_only" ? "1px solid #c084fc" : "1px solid var(--win-border-light)",
+                  border: scope === "configs_only" ? "1px solid #c084fc" : "1px solid var(--win-card-stroke)",
                   background: scope === "configs_only" ? "rgba(192, 132, 252, 0.08)" : "var(--win-card-bg)",
                   cursor: "pointer",
                 }}

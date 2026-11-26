@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface VPNProbeModalProps {
   server: {
@@ -95,14 +96,15 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            className="win-modal-close"
-            disabled={loading}
-            onClick={close}
-            title="Закрыть"
-          >
-            <X size={15} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button
+              className="win-modal-close"
+              disabled={loading}
+              onClick={close}
+            >
+              <X size={15} />
+            </button>
+          </WinTooltip>
         </div>
 
         {/* Body */}
@@ -117,7 +119,7 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
               alignItems: "center",
               justifyContent: "space-between",
               background: "var(--win-card-bg)",
-              border: "1px solid var(--win-border-light)",
+              border: "1px solid var(--win-card-stroke)",
               borderRadius: "8px",
               padding: "10px 14px",
               fontSize: "12px",
@@ -143,23 +145,20 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
             <div style={{ display: "flex", gap: "8px" }}>
               <input
                 type="text"
+                className="win-input"
                 placeholder="vless://uuid@host:443?security=reality&sni=..."
                 value={customVlessInput}
                 onChange={(e) => setCustomVlessInput(e.target.value)}
                 disabled={loading}
                 style={{
                   flex: 1,
-                  background: "var(--win-input-bg)",
-                  border: "1px solid var(--win-border)",
-                  borderRadius: "6px",
                   padding: "6px 10px",
                   fontSize: "12px",
-                  color: "var(--win-text-primary)",
-                  outline: "none",
                 }}
               />
               <button
-                className="win-btn primary"
+                type="button"
+                className="win-button primary"
                 onClick={handleTriggerTest}
                 disabled={loading}
                 style={{ padding: "6px 12px", fontSize: "12px", whiteSpace: "nowrap" }}
@@ -273,45 +272,45 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
                 <div
                   style={{
                     background: "var(--win-card-bg)",
-                    border: "1px solid var(--win-border-light)",
-                    borderRadius: "8px",
-                    padding: "12px 14px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <Zap
-                      size={16}
-                      style={{ color: result.tcp_connected ? "#38bdf8" : "#ef4444" }}
-                    />
-                    <div>
-                      <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--win-text-primary)" }}>
-                        Уровень L4: TCP Connect
-                      </div>
-                      <div style={{ fontSize: "11px", color: "var(--win-text-secondary)" }}>
-                        {result.tcp_connected ? "Сокет открыт и принимает соединения" : result.tcp_error || "Порт закрыт"}
-                      </div>
+                  border: "1px solid var(--win-card-stroke)",
+                  borderRadius: "8px",
+                  padding: "12px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <Zap
+                    size={16}
+                    style={{ color: result.tcp_connected ? "#38bdf8" : "#ef4444" }}
+                  />
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--win-text-primary)" }}>
+                      Уровень L4: TCP Connect
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--win-text-secondary)" }}>
+                      {result.tcp_connected ? "Сокет открыт и принимает соединения" : result.tcp_error || "Порт закрыт"}
                     </div>
                   </div>
-                  <div
-                    style={{
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      color: result.tcp_connected ? "#38bdf8" : "#ef4444",
-                    }}
-                  >
-                    {result.tcp_connected ? `${result.tcp_latency_ms} ms` : "Отказ"}
-                  </div>
                 </div>
-
-                {/* 2. L7 TLS / Reality Handshake */}
                 <div
                   style={{
-                    background: "var(--win-card-bg)",
-                    border: "1px solid var(--win-border-light)",
-                    borderRadius: "8px",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: result.tcp_connected ? "#38bdf8" : "#ef4444",
+                  }}
+                >
+                  {result.tcp_connected ? `${result.tcp_latency_ms} ms` : "Отказ"}
+                </div>
+              </div>
+
+              {/* 2. L7 TLS / Reality Handshake */}
+              <div
+                style={{
+                  background: "var(--win-card-bg)",
+                  border: "1px solid var(--win-card-stroke)",
+                  borderRadius: "8px",
                     padding: "12px 14px",
                     display: "flex",
                     alignItems: "center",
@@ -379,7 +378,7 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
                 <div
                   style={{
                     background: "var(--win-card-bg)",
-                    border: "1px solid var(--win-border-light)",
+                    border: "1px solid var(--win-card-stroke)",
                     borderRadius: "8px",
                     padding: "12px 14px",
                     display: "flex",
@@ -440,13 +439,14 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
             alignItems: "center",
             justifyContent: "space-between",
             padding: "14px 22px",
-            borderTop: "1px solid var(--win-border-light)",
+            borderTop: "1px solid var(--win-card-stroke)",
           }}
         >
           <div style={{ display: "flex", gap: "8px" }}>
             {result && (
               <button
-                className="win-btn secondary"
+                type="button"
+                className="win-button"
                 onClick={handleCopyReport}
                 style={{ display: "flex", alignItems: "center", gap: "6px" }}
               >
@@ -457,7 +457,8 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
           </div>
           <div style={{ display: "flex", gap: "8px" }}>
             <button
-              className="win-btn secondary"
+              type="button"
+              className="win-button"
               onClick={handleTriggerTest}
               disabled={loading}
               style={{ display: "flex", alignItems: "center", gap: "6px" }}
@@ -466,7 +467,8 @@ export const VPNProbeModal: React.FC<VPNProbeModalProps> = ({
               <span>Повторить</span>
             </button>
             <button
-              className="win-btn primary"
+              type="button"
+              className="win-button primary"
               onClick={close}
               disabled={loading}
             >

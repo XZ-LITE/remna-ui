@@ -30,7 +30,7 @@ export const ShimmerSkeleton: React.FC<ShimmerSkeletonProps> = ({
 
 export const ServerCardSkeleton: React.FC = () => {
   return (
-    <div className="server-card win-server-card-skeleton" style={{ padding: "20px", marginBottom: "16px" }}>
+    <div className="server-item-card win-server-card-skeleton" style={{ padding: "20px", marginBottom: "16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <ShimmerSkeleton width="38px" height="38px" borderRadius="50%" />

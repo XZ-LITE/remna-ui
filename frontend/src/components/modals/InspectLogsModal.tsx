@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { Terminal as TerminalIcon, Search, RotateCcw, RefreshCw, Copy, X, AlertTriangle, Wrench } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface InspectLogsModalProps {
   server: types.SavedServer;
@@ -49,13 +50,15 @@ export const InspectLogsModal: React.FC<InspectLogsModalProps> = ({
               ({server.label || server.host})
             </span>
           </div>
-          <button
-            className="win-button"
-            style={{ padding: "0 8px", height: "26px" }}
-            onClick={close}
-          >
-            <X size={14} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button
+              className="win-button"
+              style={{ padding: "0 8px", height: "26px" }}
+              onClick={close}
+            >
+              <X size={14} />
+            </button>
+          </WinTooltip>
         </div>
 
         {/* Modal Toolbar: Search & Auto-refresh */}

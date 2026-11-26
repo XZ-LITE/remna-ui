@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Copy, ExternalLink, Download, QrCode, Globe, Layers, Check } from "lucide-react";
 import { generateQRCodeSVGPath } from "./qrGenerator";
+import { WinTooltip } from "./WinTooltip";
 
 export interface QRCodeWidgetProps {
   panelUrl: string;
@@ -132,16 +133,17 @@ export const QRCodeWidget: React.FC<QRCodeWidgetProps> = ({
               style={{ fontSize: "11px", height: "30px", flex: 1 }}
               value={currentUrl}
             />
-            <button
-              type="button"
-              className="win-button"
-              style={{ height: "30px", padding: "0 10px" }}
-              onClick={handleCopy}
-              title="Скопировать ссылку"
-            >
-              {copied ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
-              <span>{copied ? "Скопировано" : "Копировать"}</span>
-            </button>
+            <WinTooltip content="Скопировать ссылку">
+              <button
+                type="button"
+                className="win-button"
+                style={{ height: "30px", padding: "0 10px" }}
+                onClick={handleCopy}
+              >
+                {copied ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+                <span>{copied ? "Скопировано" : "Копировать"}</span>
+              </button>
+            </WinTooltip>
           </div>
 
           {/* Quick Actions */}
@@ -157,16 +159,17 @@ export const QRCodeWidget: React.FC<QRCodeWidgetProps> = ({
                 <span>Открыть в браузере</span>
               </button>
             )}
-            <button
-              type="button"
-              className="win-button"
-              style={{ height: "28px", fontSize: "11.5px", padding: "0 10px" }}
-              onClick={handleDownloadSVG}
-              title="Скачать векторный QR в формате SVG"
-            >
-              <Download size={12} />
-              <span>Скачать SVG</span>
-            </button>
+            <WinTooltip content="Скачать векторный QR в формате SVG">
+              <button
+                type="button"
+                className="win-button"
+                style={{ height: "28px", fontSize: "11.5px", padding: "0 10px" }}
+                onClick={handleDownloadSVG}
+              >
+                <Download size={12} />
+                <span>Скачать SVG</span>
+              </button>
+            </WinTooltip>
           </div>
         </div>
       </div>

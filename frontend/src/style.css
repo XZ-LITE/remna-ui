@@ -568,7 +568,8 @@ body {
   }
 }
 
-.animate-spin {
+.animate-spin,
+.spin {
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin {
@@ -2945,6 +2946,50 @@ input::-webkit-credentials-auto-fill-button {
   color: var(--win-text-primary);
 }
 
+.win-modal-desc {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--win-text-tertiary);
+  line-height: 1.4;
+}
+
+.modal-title-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.win-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--win-control-stroke);
+  background: var(--win-control-bg);
+  color: var(--win-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.14s var(--win-ease-decelerate), color 0.14s ease, border-color 0.14s ease;
+}
+
+.win-modal-close:hover:not(:disabled) {
+  background: var(--win-control-bg-hover);
+  color: var(--win-text-primary);
+  border-color: var(--win-card-stroke-hover);
+}
+
+.win-modal-close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .win-modal-toolbar {
   padding: 8px 18px;
   background: var(--win-subtab-bar-bg);
@@ -3258,7 +3303,7 @@ textarea.win-input {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  z-index: 2000;
+  z-index: 12000;
   pointer-events: none;
 }
 
@@ -4540,10 +4585,8 @@ textarea.win-input {
 }
 
 .server-more-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  width: 240px;
+  position: fixed;
+  width: 246px;
   background: var(--win-flyout-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
@@ -4551,13 +4594,28 @@ textarea.win-input {
   border-radius: var(--win-radius-md, 8px);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), var(--win-elevation-shadow);
   padding: 6px;
-  z-index: 500;
+  z-index: 14000;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  animation: menuAppear 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   max-height: 380px;
   overflow-y: auto;
+  transform-origin: top right;
+  animation: win-select-enter-bottom 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.server-more-menu.placement-top {
+  transform-origin: bottom right;
+  animation: win-select-enter-top 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.server-more-menu.exiting {
+  animation: win-select-exit-bottom 0.11s cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
+.server-more-menu.placement-top.exiting {
+  animation: win-select-exit-top 0.11s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 @keyframes menuAppear {
@@ -4605,6 +4663,15 @@ textarea.win-input {
 .server-menu-item.danger:hover {
   background: rgba(239, 68, 68, 0.18);
   color: #fca5a5;
+}
+
+:root[data-theme="light"] .server-menu-item.danger {
+  color: #dc2626;
+}
+
+:root[data-theme="light"] .server-menu-item.danger:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
 }
 
 .server-menu-divider {
@@ -5112,7 +5179,7 @@ textarea.win-input {
   gap: 6px;
   padding: 4px;
   background: var(--win-card-bg);
-  border: 1px solid var(--win-border-subtle);
+  border: 1px solid var(--win-card-stroke);
   border-radius: var(--win-radius-md, 8px);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -5123,7 +5190,7 @@ textarea.win-input {
 .catalog-toolbar-divider {
   width: 1px;
   height: 20px;
-  background: var(--win-border-subtle);
+  background: var(--win-card-stroke);
   margin: 0 4px;
   flex-shrink: 0;
 }
@@ -5165,7 +5232,7 @@ textarea.win-input {
 }
 
 .server-accordion-btn:hover {
-  background: var(--win-hover-subtle);
+  background: var(--win-control-bg-hover);
   color: var(--win-text-primary);
 }
 

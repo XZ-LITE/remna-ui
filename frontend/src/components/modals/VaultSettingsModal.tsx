@@ -4,6 +4,7 @@ import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { PasswordInput } from "../ui/PasswordInput";
 import { WinSelect } from "../ui/WinSelect";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface VaultSettingsModalProps {
   isOpen: boolean;
@@ -158,15 +159,16 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            className="win-button"
-            style={{ padding: "0 8px", height: "26px" }}
-            onClick={() => !loading && close()}
-            title="Закрыть"
-          >
-            <X size={14} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button
+              type="button"
+              className="win-button"
+              style={{ padding: "0 8px", height: "26px" }}
+              onClick={() => !loading && close()}
+            >
+              <X size={14} />
+            </button>
+          </WinTooltip>
         </div>
 
         {/* Tab Selector if Master is Enabled */}

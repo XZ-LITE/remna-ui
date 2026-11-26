@@ -26,6 +26,7 @@ import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { PasswordInput } from "../ui/PasswordInput";
 import { WinSelect } from "../ui/WinSelect";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 export interface EditServerData {
   server: types.SavedServer;
@@ -150,9 +151,11 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
               </p>
             </div>
           </div>
-          <button className="win-modal-close" onClick={close} title="Закрыть">
-            <X size={14} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button className="win-modal-close" onClick={close}>
+              <X size={14} />
+            </button>
+          </WinTooltip>
         </div>
 
         {/* Scrollable Body */}

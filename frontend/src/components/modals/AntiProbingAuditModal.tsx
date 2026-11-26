@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import * as types from "../../../bindings/remna-ui/internal/types/models";
 import { WinModal } from "../ui/WinModal";
+import { WinTooltip } from "../ui/WinTooltip";
 
 interface AntiProbingAuditModalProps {
   server: types.SavedServer;
@@ -129,15 +130,16 @@ export const AntiProbingAuditModal: React.FC<AntiProbingAuditModalProps> = ({
               </div>
             </div>
           </div>
-          <button
-            className="win-button"
-            style={{ padding: "0 8px", height: "28px" }}
-            onClick={() => !loading && !applying && close()}
-            title="Закрыть окно"
-            disabled={loading || applying}
-          >
-            <X size={14} />
-          </button>
+          <WinTooltip content="Закрыть" shortcut="Esc">
+            <button
+              className="win-button"
+              style={{ padding: "0 8px", height: "28px" }}
+              onClick={() => !loading && !applying && close()}
+              disabled={loading || applying}
+            >
+              <X size={14} />
+            </button>
+          </WinTooltip>
         </div>
 
         {/* Scrollable Body - Adapts cleanly to any window height */}
