@@ -777,14 +777,15 @@ func GetServerStatus(server types.SavedServer, password string) types.ServerStat
 
 
 	const telemetryDelimiter = "__REMNA_SECTION_TEL_v3__"
+	const warpStatusProbeCmd = `((ip link show warp >/dev/null 2>&1 || (command -v wg >/dev/null 2>&1 && wg show warp >/dev/null 2>&1)) && echo "yes") || (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"`
 
 	var cmd string
 	if server.Role == "node" {
 		// Lightweight interrogation optimized for Edge Nodes: avoids heavy & non-existent Postgres/Panel checks
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; echo "0"; echo "` + telemetryDelimiter + `"; ` + warpStatusProbeCmd + `; echo "` + telemetryDelimiter + `"; echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	} else {
 		// Comprehensive interrogation for Master Panel VPS (includes Postgres DB, Backups, and Valkey Sockets)
-		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT COALESCE((SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true), 0) || '|' || (SELECT count(*) FROM nodes);" 2>/dev/null || echo "0|0"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; (command -v warp-cli >/dev/null 2>&1 && warp-cli --accept-tos status 2>/dev/null | grep -qi "connected" && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
+		cmd = `grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"'; echo "` + telemetryDelimiter + `"; free -m | awk '/^Mem:/{print $3 "|" $2}'; echo "` + telemetryDelimiter + `"; df -h / | awk 'NR==2{print $3 "|" $2 "|" $5}'; echo "` + telemetryDelimiter + `"; uptime -p 2>/dev/null || uptime; echo "` + telemetryDelimiter + `"; docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true; echo "` + telemetryDelimiter + `"; sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "unknown"; echo "` + telemetryDelimiter + `"; [ -f /etc/docker/daemon.json ] && grep -q "registry-mirrors" /etc/docker/daemon.json && echo "yes" || echo "no"; echo "` + telemetryDelimiter + `"; ls -lh /opt/remnawave/backups/*.tar.gz 2>/dev/null | awk '{print $9 "|" $5 "|" $6 " " $7 " " $8}' || true; echo "` + telemetryDelimiter + `"; docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT COALESCE((SELECT count(*) FROM node_plugin np JOIN nodes n ON n.active_plugin_uuid = np.uuid WHERE (np.plugin_config->'torrentBlocker'->>'enabled')::boolean = true), 0) || '|' || (SELECT count(*) FROM nodes);" 2>/dev/null || echo "0|0"; echo "` + telemetryDelimiter + `"; echo ""; echo "` + telemetryDelimiter + `"; ` + warpStatusProbeCmd + `; echo "` + telemetryDelimiter + `"; ([ -f /opt/remnawave/panel/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/panel/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/panel/docker-compose.yml && echo "yes") || ([ -f /opt/remnawave/docker-compose.yml ] && grep -q "shm_size: 512mb" /opt/remnawave/docker-compose.yml && grep -q "valkey.sock" /opt/remnawave/docker-compose.yml && echo "yes") || echo "no"; echo "` + telemetryDelimiter + `"; awk '/^cpu /{t=$2+$3+$4+$5+$6+$7+$8+$9+$10; if(t>0) printf "%.1f", ($9*100)/t}' /proc/stat 2>/dev/null || echo "0.0"`
 	}
 
 	out, err := session.Output(cmd)
@@ -1650,8 +1651,8 @@ if docker ps --format '{{.Names}}' | grep -q 'remnawave-db'; then
   fi
 
   if docker exec -i remnawave-db pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-privileges -F c -Z 9 > "$TEMP_DIR/remnawave.dump" 2>"$TEMP_DIR/dump.err"; then
-    # Verify TOC integrity of the custom dump
-    if docker exec -i remnawave-db pg_restore -l "$TEMP_DIR/remnawave.dump" >/dev/null 2>&1; then
+    # Verify TOC integrity of the custom dump via stdin (dump resides on host, not inside container)
+    if docker exec -i remnawave-db pg_restore -l < "$TEMP_DIR/remnawave.dump" >/dev/null 2>&1; then
       HAS_DUMP="yes"
     else
       echo "ERR_INTEGRITY: Ошибка валидации дампа PostgreSQL (pg_restore -l завершился сбоем)." >&2
@@ -1828,12 +1829,13 @@ for env_f in "${COMPOSE_DIR}/.env" /opt/remnawave/.env /opt/remnawave/panel/.env
   fi
 done
 
-# 1. Truncate user tables and tokens across possible schemas
+# 1. Truncate user/admin tables and tokens across Remnawave v1/v2/v3 schemas
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'remnawave-db'; then
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE admin CASCADE;' 2>/dev/null || \
   docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "User" CASCADE;' 2>/dev/null || \
   docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "Admin" CASCADE;' 2>/dev/null || \
   docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE users CASCADE;' 2>/dev/null || \
-  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d postgres -c 'TRUNCATE TABLE "User" CASCADE;' 2>/dev/null || true
+  docker exec -u postgres remnawave-db psql -U "$DB_USER" -d postgres -c 'TRUNCATE TABLE admin CASCADE;' 2>/dev/null || true
 
   docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "RefreshToken" CASCADE;' 2>/dev/null || true
   docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -c 'TRUNCATE TABLE "Session" CASCADE;' 2>/dev/null || true
@@ -1930,8 +1932,13 @@ elif command -v certbot >/dev/null 2>&1; then
   docker start remnawave-nginx remnawave-caddy 2>/dev/null || restart_proxy
   echo "SSL сертификаты Let's Encrypt (Certbot) успешно обновлены!"
 
+elif docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^remnawave-caddy$'; then
+  echo ">>> Обнаружен Caddy (встроенный ACME Let's Encrypt)..."
+  docker restart remnawave-caddy >/dev/null 2>&1 || true
+  echo "Caddy управляет сертификатами Let's Encrypt автоматически; контейнер перезапущен для проверки/обновления SSL!"
+
 else
-  echo "Ни acme.sh, ни Certbot не обнаружены на сервере."
+  echo "Ни acme.sh, ни Certbot, ни Caddy не обнаружены на сервере."
   exit 1
 fi
 `
@@ -2675,180 +2682,7 @@ fi
 
 
 
-func InstallCloudflareWARP(server types.SavedServer) types.CommandResult {
-
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: "Ошибка подключения SSH: " + err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: "Ошибка создания сессии SSH: " + err.Error()}
-
-	}
-
-	defer session.Close()
-
-
-
-	script := `
-
-echo ">>> Настройка официального клиента Cloudflare WARP..."
-
-export DEBIAN_FRONTEND=noninteractive
-
-
-
-# Установка зависимостей и репозитория Cloudflare
-
-if ! command -v warp-cli >/dev/null 2>&1; then
-
-  echo "Добавление официального репозитория Cloudflare..."
-
-  apt-get update -qq >/dev/null 2>&1 || true
-
-  apt-get install -y -qq curl gpg lsb-release >/dev/null 2>&1 || true
-
-  curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg 2>/dev/null || true
-
-  echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list >/dev/null 2>&1 || true
-
-  apt-get update -qq >/dev/null 2>&1 || true
-
-  apt-get install -y -qq cloudflare-warp >/dev/null 2>&1 || true
-
-fi
-
-
-
-if command -v warp-cli >/dev/null 2>&1; then
-
-  echo "Регистрация и инициализация WARP в режиме SOCKS5 прокси..."
-
-  warp-cli --accept-tos registration new >/dev/null 2>&1 || warp-cli --accept-tos register >/dev/null 2>&1 || true
-
-  warp-cli --accept-tos mode proxy >/dev/null 2>&1 || true
-
-  warp-cli --accept-tos proxy port 40000 >/dev/null 2>&1 || true
-
-  warp-cli --accept-tos connect >/dev/null 2>&1 || true
-
-  sleep 2
-
-  STATUS=$(warp-cli --accept-tos status 2>/dev/null || echo "Connected")
-
-  echo "Cloudflare WARP успешно установлен и подключен!"
-
-  echo "Локальный SOCKS5 эндпоинт для исходящих: 127.0.0.1:40000"
-
-  echo "$STATUS"
-
-else
-
-  echo "Не удалось установить cloudflare-warp. Убедитесь, что система — Ubuntu или Debian 64-bit."
-
-fi
-
-`
-
-	out, err := session.CombinedOutput(script)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: string(out)}
-
-	}
-
-	return types.CommandResult{Success: true, Output: strings.TrimSpace(string(out))}
-
-}
-
-
-
-
-
-func ConfigureRealitySelfSteal(server types.SavedServer, fallbackDomain string) types.CommandResult {
-	fallbackDomain = strings.TrimSpace(fallbackDomain)
-	if fallbackDomain == "" {
-		fallbackDomain = "127.0.0.1:8443"
-	}
-	if strings.ContainsAny(fallbackDomain, "\r\n\"'`;|&$<> \t\\") {
-		return types.CommandResult{Success: false, Error: "Некорректный адрес fallback: содержит недопустимые символы"}
-	}
-
-	client, err := getSSHClient(server)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: "Ошибка подключения SSH: " + err.Error()}
-
-	}
-
-	defer client.Close()
-
-
-
-	session, err := client.NewSession()
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: "Ошибка создания сессии SSH: " + err.Error()}
-
-	}
-
-	defer session.Close()
-
-
-
-	if fallbackDomain == "" {
-
-		fallbackDomain = "127.0.0.1:8443"
-
-	}
-
-
-
-	script := fmt.Sprintf(`
-echo ">>> Проверка и настройка VLESS Reality SelfSteal..."
-
-if ! docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q 'remnanode'; then
-  echo "Контейнер ноды remnanode не обнаружен на сервере. Сначала разверните или запустите Remnanode."
-  exit 1
-fi
-
-if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'remnanode'; then
-  echo "Нода remnanode активна и работает."
-  echo "Архитектура SelfSteal готова: укажите dest/fallback = %s в настройках ноды в панели Remnawave."
-  echo "При проверках сканеров ТСПУ или недоверенном трафике нода будет прозрачно отдавать локальный маскировочный сайт."
-else
-  echo "Контейнер remnanode найден, но находится в остановленном состоянии. Попробуйте перезапустить ноду."
-  exit 1
-fi
-`, fallbackDomain)
-
-
-
-	out, err := session.CombinedOutput(script)
-
-	if err != nil {
-
-		return types.CommandResult{Success: false, Error: string(out)}
-
-	}
-
-	return types.CommandResult{Success: true, Output: strings.TrimSpace(string(out))}
-
-}
+// InstallCloudflareWARP and ConfigureRealitySelfSteal are implemented in warp_selfsteal.go.
 
 
 
@@ -2869,9 +2703,20 @@ func AutoFixSubscriptionToken(server types.SavedServer) types.CommandResult {
 	cmd := `
 which jq >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1 || true)
 API_BASE="http://127.0.0.1:3000"
+CURL_RESOLVE=""
 
 STATUS=$(curl -s --connect-timeout 3 -m 5 "${API_BASE}/api/auth/status" 2>/dev/null || true)
-if ! echo "$STATUS" | grep -q '"isConfigured"'; then
+if ! echo "$STATUS" | grep -qE '"isConfigured"|"isLoginAllowed"|"isRegisterAllowed"'; then
+  DOMAIN_HOST=$(grep -E '^(PANEL_DOMAIN|FRONT_END_DOMAIN|APP_ORIGIN|SUB_PUBLIC_DOMAIN)=' /opt/remnawave/panel/.env /opt/remnawave/.env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"\r\n ' | sed -E 's|^https?://||; s|/.*||')
+  if [ -n "$DOMAIN_HOST" ]; then
+    CURL_RESOLVE="--resolve ${DOMAIN_HOST}:443:127.0.0.1"
+    STATUS=$(curl -sk --connect-timeout 3 -m 5 ${CURL_RESOLVE} "https://${DOMAIN_HOST}/api/auth/status" 2>/dev/null || true)
+    if echo "$STATUS" | grep -qE '"isConfigured"|"isLoginAllowed"|"isRegisterAllowed"'; then
+      API_BASE="https://${DOMAIN_HOST}"
+    fi
+  fi
+fi
+if ! echo "$STATUS" | grep -qE '"isConfigured"|"isLoginAllowed"|"isRegisterAllowed"'; then
   echo "ERROR_API_UNREACHABLE"
   exit 1
 fi
@@ -2880,7 +2725,7 @@ ACCESS_TOKEN=""
 if [ -f /opt/remnawave/token ]; then
   SAVED_TOKEN=$(cat /opt/remnawave/token | tr -d '\r\n[:space:]')
   if [ -n "$SAVED_TOKEN" ]; then
-    TEST_RES=$(curl -s --connect-timeout 3 -m 5 -H "Authorization: Bearer ${SAVED_TOKEN}" "${API_BASE}/api/auth/profile" 2>/dev/null || true)
+    TEST_RES=$(curl -sk --connect-timeout 3 -m 5 ${CURL_RESOLVE} -H "Authorization: Bearer ${SAVED_TOKEN}" "${API_BASE}/api/auth/profile" 2>/dev/null || true)
     if echo "$TEST_RES" | grep -qE '"uuid"|"username"|"role"'; then
       ACCESS_TOKEN="$SAVED_TOKEN"
     fi
@@ -2901,7 +2746,7 @@ if [ -z "$ACCESS_TOKEN" ]; then
   [ -z "$ADMIN_USER" ] && ADMIN_USER="admin"
 
   if [ -n "$ADMIN_PASS" ]; then
-    LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
+    LOGIN_RES=$(curl -sk ${CURL_RESOLVE} -X POST "${API_BASE}/api/auth/login" \
       -H "Content-Type: application/json" \
       -H "X-Remnawave-Client-Type: browser" \
       -H "X-Forwarded-For: 127.0.0.1" \
@@ -2920,7 +2765,7 @@ echo "$ACCESS_TOKEN" > /opt/remnawave/token 2>/dev/null || true
 chmod 600 /opt/remnawave/token 2>/dev/null || true
 
 SUB_PAYLOAD='{"name":"subscription-page","expiresInDays":3650,"scopes":["subscription-page-configs:list","subscription-page-configs:get","subscriptions:subpage-config","system:metadata","users:by-username"]}'
-SUB_TOKEN_RES=$(curl -s -X POST "${API_BASE}/api/tokens" \
+SUB_TOKEN_RES=$(curl -sk ${CURL_RESOLVE} -X POST "${API_BASE}/api/tokens" \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -H "Content-Type: application/json" \
   -H "X-Remnawave-Client-Type: browser" \

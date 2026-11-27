@@ -42,6 +42,8 @@ type DeploymentPlan struct {
 type DNSResult struct {
 	Resolved bool   `json:"resolved"`
 	IP       string `json:"ip"`
+	DoHIP    string `json:"doh_ip,omitempty"`
+	Spoofed  bool   `json:"spoofed,omitempty"`
 	Message  string `json:"message"`
 }
 

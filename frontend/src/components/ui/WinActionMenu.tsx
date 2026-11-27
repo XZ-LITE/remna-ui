@@ -103,7 +103,17 @@ export const WinActionMenu: React.FC<WinActionMenuProps> = ({
     };
 
     const handleScroll = (e: Event) => {
-      if (menuRef.current && menuRef.current.contains(e.target as Node)) {
+      const target = e.target;
+      if (menuRef.current && target instanceof Node && menuRef.current.contains(target)) {
+        return;
+      }
+      if (
+        target instanceof Node &&
+        target !== document &&
+        target !== document.documentElement &&
+        anchorRef.current &&
+        !target.contains(anchorRef.current)
+      ) {
         return;
       }
       onCloseRef.current();

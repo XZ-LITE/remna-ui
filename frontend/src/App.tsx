@@ -764,16 +764,8 @@ export function App() {
 
   const [loadingServersList, setLoadingServersList] = useState<boolean>(true);
 
-  // Active Context Menu for Server Cards (Stage 2: Visual De-cluttering)
+  // Active Context Menu for Server Cards (outside-click & Escape handled inside WinActionMenu)
   const [activeServerMenu, setActiveServerMenu] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handleClickOutside = () => setActiveServerMenu(null);
-    if (activeServerMenu) {
-      document.addEventListener("click", handleClickOutside);
-      return () => document.removeEventListener("click", handleClickOutside);
-    }
-  }, [activeServerMenu]);
 
   const [serverStatus, setServerStatus] = useState<{ [id: string]: types.ServerStatusResult }>({});
 
@@ -2758,6 +2750,48 @@ export function App() {
 
   // Cloudflare WARP Outbound Setup
 
+  const renderDnsStatusBar = (
+    status: types.DNSResult,
+    options: {
+      confirmedTitle: string;
+      foundPrefix: string;
+      vpsMatchSuffix: string;
+      missingMessage: string;
+      style: React.CSSProperties;
+    }
+  ) => {
+    const isSpoofed = Boolean(status.spoofed);
+    const isHealthy = status.resolved && !isSpoofed;
+    return (
+      <InfoBar
+        severity={isHealthy ? "success" : "warning"}
+        title={
+          isSpoofed
+            ? "Расхождение DNS (возможна подмена)"
+            : status.resolved
+              ? options.confirmedTitle
+              : "Внимание по DNS"
+        }
+        message={
+          isSpoofed ? (
+            status.message ||
+            `Системный DNS вернул ${status.ip}, но DoH указывает на ${status.doh_ip}.`
+          ) : status.resolved ? (
+            <>
+              {options.foundPrefix} <strong>{status.ip}</strong>{" "}
+              {sshHost && status.ip === sshHost ? options.vpsMatchSuffix : ""}
+            </>
+          ) : status.ip ? (
+            `Домен указывает на ${status.ip}.`
+          ) : (
+            status.message || options.missingMessage
+          )
+        }
+        style={options.style}
+      />
+    );
+  };
+
   const handleInstallWARP = async (srv: types.SavedServer) => {
 
     const key = `warp-${srv.id}`;
@@ -2770,7 +2804,13 @@ export function App() {
 
       if (res.success) {
 
-        addToast("success", "Cloudflare WARP успешно настроен на сервере!");
+        const outText = res.output || "";
+        addToast(
+          "success",
+          outText.includes("Native WARP")
+            ? "Native WARP (wgcf + kill-switch mark 51888) активирован!"
+            : "Cloudflare WARP подключен (SOCKS5 127.0.0.1:40000)!"
+        );
 
         handleInspectServer(srv);
 
@@ -2808,7 +2848,15 @@ export function App() {
 
       if (res.success) {
 
-        addToast("success", "SelfSteal Decoy-сайт успешно развёрнут!");
+        const outText = res.output || "";
+        if (outText.includes("изменен вручную")) {
+          addToast(
+            "warning",
+            "Обнаружены ручные правки Caddyfile — новый шаблон сохранен рядом в Caddyfile.new."
+          );
+        } else {
+          addToast("success", "Caddy SelfSteal (127.0.0.1:8443) развёрнут и проверен!");
+        }
 
         handleInspectServer(srv);
 
@@ -4581,25 +4629,13 @@ export function App() {
                                       style={{ margin: 0 }}
                                     />
                                   )}
-                                  {!decoyDnsLoading && decoyDnsStatus && (
-                                    <InfoBar
-                                      severity={decoyDnsStatus.resolved ? "success" : "warning"}
-                                      title={decoyDnsStatus.resolved ? "A-запись подтверждена" : "Внимание по DNS"}
-                                      message={
-                                        decoyDnsStatus.resolved ? (
-                                          <>
-                                            A-запись найдена: <strong>{decoyDnsStatus.ip}</strong>{" "}
-                                            {sshHost && decoyDnsStatus.ip === sshHost ? "(Совпадает с VPS ноды)" : ""}
-                                          </>
-                                        ) : (
-                                          decoyDnsStatus.ip
-                                            ? `Домен указывает на ${decoyDnsStatus.ip}.`
-                                            : decoyDnsStatus.message || "A-запись не найдена в DNS. Добавьте A-запись у вашего DNS-провайдера."
-                                        )
-                                      }
-                                      style={{ margin: 0 }}
-                                    />
-                                  )}
+                                  {!decoyDnsLoading && decoyDnsStatus && renderDnsStatusBar(decoyDnsStatus, {
+                                    confirmedTitle: "A-запись подтверждена",
+                                    foundPrefix: "A-запись найдена:",
+                                    vpsMatchSuffix: "(Совпадает с VPS ноды)",
+                                    missingMessage: "A-запись не найдена в DNS. Добавьте A-запись у вашего DNS-провайдера.",
+                                    style: { margin: 0 },
+                                  })}
                                 </div>
                               ) : (
 
@@ -4792,43 +4828,19 @@ export function App() {
 
                               )}
 
-                              {!dnsLoading && dnsStatus && (
+                              {!dnsLoading && dnsStatus && renderDnsStatusBar(dnsStatus, {
 
-                                <InfoBar
+                                confirmedTitle: "A-запись подтверждена",
 
-                                  severity={dnsStatus.resolved ? "success" : "warning"}
+                                foundPrefix: "A-запись найдена:",
 
-                                  title={dnsStatus.resolved ? "A-запись подтверждена" : "Внимание по DNS"}
+                                vpsMatchSuffix: "(Совпадает с VPS)",
 
-                                  message={
+                                missingMessage: "A-запись не найдена в DNS. Добавьте A-запись у вашего регистратора.",
 
-                                    dnsStatus.resolved ? (
+                                style: { marginTop: "12px", marginBottom: "0" },
 
-                                      <>
-
-                                        A-запись найдена: <strong>{dnsStatus.ip}</strong>{" "}
-
-                                        {sshHost && dnsStatus.ip === sshHost ? "(Совпадает с VPS)" : ""}
-
-                                      </>
-
-                                    ) : (
-
-                                      dnsStatus.ip
-
-                                        ? `Домен указывает на ${dnsStatus.ip}.`
-
-                                        : dnsStatus.message || "A-запись не найдена в DNS. Добавьте A-запись у вашего регистратора."
-
-                                    )
-
-                                  }
-
-                                  style={{ marginTop: "12px", marginBottom: "0" }}
-
-                                />
-
-                              )}
+                              })}
 
                             </SettingsCard>
 
@@ -4936,43 +4948,19 @@ export function App() {
 
                               )}
 
-                              {!subDnsLoading && subDnsStatus && (
+                              {!subDnsLoading && subDnsStatus && renderDnsStatusBar(subDnsStatus, {
 
-                                <InfoBar
+                                confirmedTitle: "A-запись поддомена подтверждена",
 
-                                  severity={subDnsStatus.resolved ? "success" : "warning"}
+                                foundPrefix: "A-запись поддомена найдена:",
 
-                                  title={subDnsStatus.resolved ? "A-запись поддомена подтверждена" : "Внимание по DNS"}
+                                vpsMatchSuffix: "(Совпадает с VPS)",
 
-                                  message={
+                                missingMessage: "A-запись поддомена не найдена в DNS. Добавьте запись sub у регистратора.",
 
-                                    subDnsStatus.resolved ? (
+                                style: { marginTop: "12px", marginBottom: "0" },
 
-                                      <>
-
-                                        A-запись поддомена найдена: <strong>{subDnsStatus.ip}</strong>{" "}
-
-                                        {sshHost && subDnsStatus.ip === sshHost ? "(Совпадает с VPS)" : ""}
-
-                                      </>
-
-                                    ) : (
-
-                                      subDnsStatus.ip
-
-                                        ? `Поддомен указывает на ${subDnsStatus.ip}.`
-
-                                        : subDnsStatus.message || "A-запись поддомена не найдена в DNS. Добавьте запись sub у регистратора."
-
-                                    )
-
-                                  }
-
-                                  style={{ marginTop: "12px", marginBottom: "0" }}
-
-                                />
-
-                              )}
+                              })}
 
                             </SettingsCard>
 
@@ -6147,43 +6135,291 @@ export function App() {
 
 
                     {/* Deployment Parameters Summary Card */}
-                    <div className="settings-group">
-                      <div className="settings-group-title">Сводка параметров перед запуском</div>
-                      <div className="settings-card-group" style={{ padding: "14px 16px", background: "var(--win-fill-card-secondary)", border: "1px solid var(--win-stroke-card)", borderRadius: "8px" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", fontSize: "12.5px" }}>
-                          <div>
-                            <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Режим топологии:</span>
-                            <strong style={{ color: "var(--win-text-primary)" }}>
-                              {portMode === "stealth443" ? "eGames Stealth 443 (Single Port)" : "Классический режим портов"}
-                            </strong>
+                    {(() => {
+                      type SummaryTile = {
+                        key: string;
+                        label: string;
+                        value: string;
+                        icon: React.ReactNode;
+                        accent?: boolean;
+                        mono?: boolean;
+                      };
+
+                      const tiles: SummaryTile[] = [
+                        {
+                          key: "topology",
+                          label: "Режим топологии",
+                          value: portMode === "stealth443" ? "eGames Stealth 443 · Single Port" : "Классический · 2222 / 443",
+                          icon: <Network size={14} style={{ color: "var(--win-accent)" }} />,
+                        },
+                      ];
+
+                      if (preset !== "node-only" && components.includes("panel")) {
+                        tiles.push({
+                          key: "admin",
+                          label: "Суперадминистратор панели",
+                          value:
+                            adminCreationMode === "auto"
+                              ? "Автогенерация · 28 симв."
+                              : adminCreationMode === "custom"
+                              ? `Логин: ${adminUsername.trim() || "admin"}`
+                              : "Вручную при первом входе",
+                          icon: <KeyRound size={14} style={{ color: "var(--win-accent)" }} />,
+                          accent: true,
+                        });
+                      } else if (components.includes("node")) {
+                        tiles.push({
+                          key: "core",
+                          label: "Ядро Xray ноды",
+                          value: xrayCoreType === "jolymmiles" ? "Jolymmiles Xray (Anti-DPI)" : "Official Xray-core",
+                          icon: <Cpu size={14} style={{ color: "var(--win-accent)" }} />,
+                          accent: true,
+                        });
+                      }
+
+                      if (panelDomain) {
+                        tiles.push({
+                          key: "panel-domain",
+                          label: "Домен панели",
+                          value: panelDomain,
+                          icon: <Globe size={14} style={{ color: "var(--win-status-success)" }} />,
+                          mono: true,
+                        });
+                      }
+
+                      if (components.includes("subscription") && subDomain) {
+                        tiles.push({
+                          key: "sub-domain",
+                          label: "Домен подписок",
+                          value: subDomain,
+                          icon: <Link2 size={14} style={{ color: "var(--win-status-success)" }} />,
+                          mono: true,
+                        });
+                      }
+
+                      const chips: { label: string; icon: React.ReactNode; highlight?: boolean }[] = [
+                        {
+                          label: proxy === "nginx" ? "Proxy: Nginx" : "Proxy: Caddy 2",
+                          icon: <Layers size={11} />,
+                        },
+                      ];
+                      if (components.includes("node") && preset !== "node-only") {
+                        chips.push({
+                          label: xrayCoreType === "jolymmiles" ? "Xray: Jolymmiles" : "Xray: Official",
+                          icon: <Cpu size={11} />,
+                        });
+                      }
+                      if (useCamouflage) {
+                        chips.push({ label: "Маскировка", icon: <Shield size={11} />, highlight: true });
+                      }
+                      if (useUfw || stealthDrop) {
+                        chips.push({ label: "UFW / Stealth", icon: <ShieldCheck size={11} />, highlight: true });
+                      }
+                      if (optimizePerformance) {
+                        chips.push({ label: "RAM + Valkey", icon: <Zap size={11} /> });
+                      }
+                      if (useCloudflareDns) {
+                        chips.push({ label: "Cloudflare DNS", icon: <Cloud size={11} /> });
+                      }
+
+                      const presetTitle =
+                        preset === "all-in-one"
+                          ? "All-in-One"
+                          : preset === "panel-only"
+                          ? "Мастер-панель"
+                          : preset === "node-only"
+                          ? "Edge Нода"
+                          : "Своя сборка";
+
+                      return (
+                        <div className="settings-group" style={{ marginTop: "12px" }}>
+                          <div
+                            style={{
+                              background: "var(--win-card-bg)",
+                              border: "1px solid var(--win-card-stroke)",
+                              borderRadius: "10px",
+                              overflow: "hidden",
+                              boxShadow: "var(--win-card-shadow)",
+                            }}
+                          >
+                            {/* Header Bar */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: "12px",
+                                padding: "11px 16px",
+                                borderBottom: "1px solid var(--win-card-row-border)",
+                                background: "var(--win-table-header-bg)",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    width: "28px",
+                                    height: "28px",
+                                    borderRadius: "7px",
+                                    background: "var(--win-accent-subtle)",
+                                    border: "1px solid var(--win-accent-stroke)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <Sliders size={14} style={{ color: "var(--win-accent)" }} />
+                                </div>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--win-text-primary)", lineHeight: 1.25 }}>
+                                    Сводка параметров перед запуском
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: "11.5px",
+                                      color: "var(--win-text-tertiary)",
+                                      fontFamily: "var(--win-font-mono)",
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      marginTop: "1px",
+                                    }}
+                                  >
+                                    {deployMode === "remote"
+                                      ? `SSH -> ${sshHost || "сервер не указан"}:${sshPort || 22}`
+                                      : `Локальный вывод -> ${outDir || "./out"}`}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <span
+                                style={{
+                                  fontSize: "11.5px",
+                                  fontWeight: 600,
+                                  color: "var(--win-accent)",
+                                  background: "var(--win-accent-subtle)",
+                                  border: "1px solid var(--win-accent-stroke)",
+                                  borderRadius: "999px",
+                                  padding: "3px 10px",
+                                  whiteSpace: "nowrap",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {presetTitle}
+                              </span>
+                            </div>
+
+                            {/* Balanced Tiles Grid */}
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                                gap: "10px",
+                                padding: "14px 16px",
+                              }}
+                            >
+                              {tiles.map((item, idx) => {
+                                const spanFull = tiles.length % 2 === 1 && idx === tiles.length - 1;
+                                return (
+                                  <div
+                                    key={item.key}
+                                    style={{
+                                      gridColumn: spanFull ? "1 / -1" : undefined,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "10px",
+                                      padding: "10px 12px",
+                                      background: "var(--win-kpi-bg)",
+                                      border: "1px solid var(--win-kpi-border)",
+                                      borderRadius: "8px",
+                                      minWidth: 0,
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        width: "28px",
+                                        height: "28px",
+                                        borderRadius: "6px",
+                                        background: "var(--win-icon-bg)",
+                                        border: "1px solid var(--win-icon-stroke)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {item.icon}
+                                    </div>
+                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                      <div
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "var(--win-text-tertiary)",
+                                          marginBottom: "2px",
+                                          whiteSpace: "nowrap",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                        }}
+                                      >
+                                        {item.label}
+                                      </div>
+                                      <div
+                                        title={item.value}
+                                        style={{
+                                          fontSize: "13px",
+                                          fontWeight: 600,
+                                          color: item.accent ? "var(--win-accent)" : "var(--win-text-primary)",
+                                          fontFamily: item.mono ? "var(--win-font-mono)" : undefined,
+                                          whiteSpace: "nowrap",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                        }}
+                                      >
+                                        {item.value}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Active Options Chips Footer */}
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                                gap: "6px",
+                                padding: "10px 16px 12px",
+                                borderTop: "1px solid var(--win-card-row-border)",
+                                background: "var(--win-subtab-bar-bg)",
+                              }}
+                            >
+                              {chips.map((chip) => (
+                                <span
+                                  key={chip.label}
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "5px",
+                                    fontSize: "11.5px",
+                                    fontWeight: 500,
+                                    color: chip.highlight ? "var(--win-status-success)" : "var(--win-text-secondary)",
+                                    background: chip.highlight ? "var(--win-status-success-bg)" : "var(--win-chip-bg)",
+                                    border: `1px solid ${chip.highlight ? "rgba(108, 203, 95, 0.25)" : "var(--win-chip-border)"}`,
+                                    borderRadius: "999px",
+                                    padding: "3px 9px",
+                                  }}
+                                >
+                                  {chip.icon}
+                                  <span>{chip.label}</span>
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          {preset !== "node-only" && components.includes("panel") && (
-                            <div>
-                              <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Суперадминистратор панели:</span>
-                              <strong style={{ color: "var(--win-accent)" }}>
-                                {adminCreationMode === "auto"
-                                  ? "Автоматически (генерация пароля 28 симв.)"
-                                  : adminCreationMode === "custom"
-                                  ? `Свой аккаунт (логин: ${adminUsername.trim() || "admin"})`
-                                  : "В браузере вручную при первом входе"}
-                              </strong>
-                            </div>
-                          )}
-                          {panelDomain && (
-                            <div>
-                              <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Домен панели:</span>
-                              <strong style={{ color: "var(--win-text-primary)" }}>{panelDomain}</strong>
-                            </div>
-                          )}
-                          {components.includes("subscription") && subDomain && (
-                            <div>
-                              <span style={{ color: "var(--win-text-secondary)", display: "block", marginBottom: "2px" }}>Домен подписок:</span>
-                              <strong style={{ color: "var(--win-text-primary)" }}>{subDomain}</strong>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* Launch Button */}
                     <div style={{ marginTop: "16px", marginBottom: "8px", display: "flex", justifyContent: "flex-end" }}>

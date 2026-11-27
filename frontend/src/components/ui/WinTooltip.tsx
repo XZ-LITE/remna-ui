@@ -161,7 +161,7 @@ export const WinTooltip: React.FC<WinTooltipProps> = ({
   }, []);
 
   const childProps = children.props as any;
-  const existingRef = (children as any).ref;
+  const existingRef = childProps?.ref ?? (children as any).ref;
 
   const mergedRef = useCallback(
     (node: HTMLElement | null) => {

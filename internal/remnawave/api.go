@@ -703,6 +703,11 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 		secretKey = sk
 	}
 
+	// Remnawave v3+ no longer returns secretKey on POST /api/nodes; fetch global node cert from GET /api/keygen.
+	if secretKey == "" {
+		secretKey = fetchKeygenSecretKey(targetURL, cleanToken, client)
+	}
+
 	hostCreated := false
 	squadUpdated := false
 
@@ -768,6 +773,41 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 		HostCreated:  hostCreated,
 		SquadUpdated: squadUpdated,
 	}
+}
+
+func fetchKeygenSecretKey(targetURL, apiToken string, client *http.Client) string {
+	kgReq, err := http.NewRequest("GET", targetURL+"/api/keygen", nil)
+	if err != nil {
+		return ""
+	}
+	kgReq.Header.Set("Authorization", "Bearer "+apiToken)
+	kgReq.Header.Set("Accept", "application/json")
+	kgReq.Header.Set("X-Remnawave-Client-Type", "browser")
+
+	kgResp, err := client.Do(kgReq)
+	if err != nil {
+		return ""
+	}
+	defer kgResp.Body.Close()
+
+	if kgResp.StatusCode < 200 || kgResp.StatusCode >= 300 {
+		return ""
+	}
+
+	var kgMap map[string]any
+	if err := json.NewDecoder(kgResp.Body).Decode(&kgMap); err != nil {
+		return ""
+	}
+	inner := kgMap
+	if nested, ok := kgMap["response"].(map[string]any); ok {
+		inner = nested
+	}
+	for _, field := range []string{"secretKey", "secret_key", "pubKey"} {
+		if val, ok := inner[field].(string); ok && strings.TrimSpace(val) != "" {
+			return strings.TrimSpace(val)
+		}
+	}
+	return ""
 }
 
 // CreateHostInPanel creates a public Host entry in Remnawave for client subscriptions

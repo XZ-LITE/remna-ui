@@ -315,6 +315,8 @@ export class CreateNodeResponse {
 export class DNSResult {
     "resolved": boolean;
     "ip": string;
+    "doh_ip"?: string;
+    "spoofed"?: boolean;
     "message": string;
 
     /** Creates a new DNSResult instance. */

@@ -182,11 +182,22 @@ export const WinSelect: React.FC<WinSelectProps> = ({
     };
 
     const handleScroll = (e: Event) => {
+      const target = e.target;
       // If scroll happened inside the dropdown menu itself, let user scroll the options list
-      if (menuRef.current && menuRef.current.contains(e.target as Node)) {
+      if (menuRef.current && target instanceof Node && menuRef.current.contains(target)) {
         return;
       }
-      // Any scroll of the outer page or container immediately closes the dropdown
+      // Ignore scroll events inside unrelated sibling panels (e.g. log console)
+      if (
+        target instanceof Node &&
+        target !== document &&
+        target !== document.documentElement &&
+        triggerRef.current &&
+        !target.contains(triggerRef.current)
+      ) {
+        return;
+      }
+      // Scrolling an ancestor of the trigger closes the dropdown
       closeMenu();
     };
 
