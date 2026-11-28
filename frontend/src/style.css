@@ -2931,8 +2931,19 @@ input::-webkit-credentials-auto-fill-button {
 }
 
 .win-modal-dialog.inspect-logs-dialog {
-  height: 82vh;
-  max-height: 720px;
+  height: min(82vh, calc(100vh - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+}
+
+@media (max-width: 960px), (max-height: 700px) {
+  .win-modal-backdrop,
+  .win-modal-overlay {
+    padding: 12px;
+  }
+  .win-modal-dialog,
+  .win-modal-content {
+    max-height: calc(100vh - 24px);
+  }
 }
 
 .win-modal-header {
@@ -3053,7 +3064,7 @@ input::-webkit-credentials-auto-fill-button {
 
 .win-modal-search-clear:hover {
   color: var(--win-text-primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--win-control-bg-hover);
 }
 
 .win-modal-body {
@@ -4267,7 +4278,7 @@ textarea.win-input {
 .win-topology-level.grid-3 {
   max-width: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
   align-items: start;
 }
@@ -4288,6 +4299,8 @@ textarea.win-input {
 
 .win-topology-node {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: var(--win-fill-card-secondary);
   border: 1px solid var(--win-stroke-card);
   border-radius: 8px;
@@ -4334,7 +4347,7 @@ textarea.win-input {
   width: 30px;
   height: 30px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--win-icon-bg);
   display: flex;
   align-items: center;
   justify-content: center;

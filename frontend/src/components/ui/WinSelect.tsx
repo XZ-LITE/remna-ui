@@ -78,12 +78,15 @@ export const WinSelect: React.FC<WinSelectProps> = ({
       return;
     }
 
-    // Check if bottom-action-bar exists (or modal footer) to prevent overlapping
+    // Check if nearest modal footer or main bottom-action-bar exists to prevent overlapping
     let bottomBoundary = window.innerHeight;
-    const bottomBar = document.querySelector(".bottom-action-bar, .modal-footer, .win-modal-footer");
+    const hostModal = triggerRef.current?.closest(".win-modal-dialog, .win-modal-content");
+    const bottomBar = hostModal
+      ? hostModal.querySelector(".win-modal-footer, .modal-footer")
+      : document.querySelector(".bottom-action-bar");
     if (bottomBar) {
       const bRect = bottomBar.getBoundingClientRect();
-      if (bRect.top > 0 && bRect.top < bottomBoundary) {
+      if (bRect.width > 0 && bRect.height > 0 && bRect.top > 0 && bRect.top < bottomBoundary) {
         bottomBoundary = bRect.top;
       }
     }
@@ -240,17 +243,24 @@ export const WinSelect: React.FC<WinSelectProps> = ({
   const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return;
 
-    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
-      e.preventDefault();
-      if (!isOpen) {
+    if (!isOpen) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
         openMenu();
-      } else if (e.key === "ArrowDown") {
-        setFocusedIndex((prev) => (prev < options.length - 1 ? prev + 1 : 0));
       }
-    } else if (e.key === "ArrowUp" && isOpen) {
+      return;
+    }
+
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeMenu();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIndex((prev) => (prev < options.length - 1 ? prev + 1 : 0));
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setFocusedIndex((prev) => (prev > 0 ? prev - 1 : options.length - 1));
-    } else if (e.key === "Enter" && isOpen && focusedIndex >= 0) {
+    } else if (e.key === "Enter" && focusedIndex >= 0) {
       e.preventDefault();
       if (options[focusedIndex]) {
         handleSelect(options[focusedIndex].value);
@@ -273,6 +283,7 @@ export const WinSelect: React.FC<WinSelectProps> = ({
         maxHeight: `${menuCoords.maxHeight}px`,
         zIndex: 15000,
       }}
+      onMouseDown={(e) => e.preventDefault()}
     >
       {options.map((opt, idx) => {
         const isSelected = opt.value === value;
@@ -336,6 +347,12 @@ export const WinSelect: React.FC<WinSelectProps> = ({
           }
         }}
         onKeyDown={handleTriggerKeyDown}
+        onBlur={(e) => {
+          const next = e.relatedTarget as Node | null;
+          if (isOpen && (!next || (!containerRef.current?.contains(next) && !menuRef.current?.contains(next)))) {
+            closeMenu();
+          }
+        }}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >

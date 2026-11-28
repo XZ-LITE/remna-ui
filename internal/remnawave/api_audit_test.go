@@ -29,8 +29,14 @@ func TestAPIAudit_CleanURL(t *testing.T) {
 }
 
 func TestAPIAudit_GenerateX25519Key(t *testing.T) {
-	key1 := generateX25519Key()
-	key2 := generateX25519Key()
+	key1, err1 := generateX25519Key()
+	if err1 != nil {
+		t.Fatalf("unexpected error generating key1: %v", err1)
+	}
+	key2, err2 := generateX25519Key()
+	if err2 != nil {
+		t.Fatalf("unexpected error generating key2: %v", err2)
+	}
 
 	if len(key1) < 32 {
 		t.Errorf("X25519 key length too short: len=%d", len(key1))

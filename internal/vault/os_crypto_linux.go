@@ -143,29 +143,32 @@ func (m *Manager) getOSProtectionBackend() string {
 	return "local_machine"
 }
 
-func (m *Manager) encryptOSSecret(secret string) string {
+func (m *Manager) encryptOSSecret(secret string) (string, error) {
 	if secret == "" || isEncryptedSecret(secret) {
-		return secret
+		return secret, nil
 	}
 	if key, ok := m.resolveLinuxOSKey(); ok {
 		if enc, err := crypto.EncryptAESGCM([]byte(secret), key); err == nil {
-			return prefixOS + enc
+			return prefixOS + enc, nil
 		}
 	}
-	return encryptLocalMachine(m.storeDir, getLinuxMachineID(), secret)
+	return encryptLocalMachine(m.storeDir, getLinuxMachineID(), secret), nil
 }
 
-func (m *Manager) decryptOSSecret(encrypted string) string {
+func (m *Manager) decryptOSSecret(encrypted string) (string, error) {
 	if strings.HasPrefix(encrypted, prefixOS) {
-		if key, ok := m.resolveLinuxOSKey(); ok {
-			if plain, err := crypto.DecryptAESGCM(strings.TrimPrefix(encrypted, prefixOS), key); err == nil {
-				return string(plain)
-			}
+		key, ok := m.resolveLinuxOSKey()
+		if !ok {
+			return "", fmt.Errorf("системный Secret Service недоступен для расшифровки")
 		}
-		return encrypted
+		plain, err := crypto.DecryptAESGCM(strings.TrimPrefix(encrypted, prefixOS), key)
+		if err != nil {
+			return "", err
+		}
+		return string(plain), nil
 	}
 	if strings.HasPrefix(encrypted, prefixLocal) {
-		return decryptLocalMachine(m.storeDir, getLinuxMachineID(), encrypted)
+		return decryptLocalMachine(m.storeDir, getLinuxMachineID(), encrypted), nil
 	}
-	return encrypted
+	return encrypted, nil
 }

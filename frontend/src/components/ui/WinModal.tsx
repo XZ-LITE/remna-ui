@@ -39,6 +39,7 @@ export interface WinModalProps {
 
 const EXIT_DURATION_MS = 170;
 const ENTER_DURATION_MS = 250;
+const modalOpenStack: symbol[] = [];
 
 export const WinModal: React.FC<WinModalProps> = ({
   isOpen,
@@ -66,6 +67,10 @@ export const WinModal: React.FC<WinModalProps> = ({
   const isClosingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const modalIdRef = useRef<symbol | null>(null);
+  if (!modalIdRef.current) {
+    modalIdRef.current = Symbol("win-modal");
+  }
 
   const clearTimers = useCallback(() => {
     if (closeTimerRef.current !== null) {
@@ -143,10 +148,19 @@ export const WinModal: React.FC<WinModalProps> = ({
   }, [isOpen, clearTimers, handleClose]);
 
   useEffect(() => {
-    if (!isRendered || isClosing) return;
+    const id = modalIdRef.current!;
+    if (!isRendered || isClosing) {
+      const idx = modalOpenStack.lastIndexOf(id);
+      if (idx !== -1) modalOpenStack.splice(idx, 1);
+      return;
+    }
+    if (!modalOpenStack.includes(id)) {
+      modalOpenStack.push(id);
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
+        if (modalOpenStack[modalOpenStack.length - 1] !== id) return;
         if (preventBackdropClose || !closeOnEscape) {
           e.preventDefault();
           triggerWobble();
@@ -158,7 +172,11 @@ export const WinModal: React.FC<WinModalProps> = ({
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      const idx = modalOpenStack.lastIndexOf(id);
+      if (idx !== -1) modalOpenStack.splice(idx, 1);
+    };
   }, [isRendered, isClosing, preventBackdropClose, closeOnEscape, handleClose, triggerWobble]);
 
   useEffect(() => {

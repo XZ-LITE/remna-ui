@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"os/exec"
 	runtimeOS "runtime"
 	"strings"
@@ -183,19 +184,37 @@ func (a *App) CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeR
 	return remnawave.CreateNodeInPanel(panelURL, apiToken, req)
 }
 
-func (a *App) GetPanelNodes(panelURL, apiToken string) []types.PanelNodeItem {
-	nodes, _ := remnawave.GetNodes(panelURL, apiToken)
-	return nodes
+func (a *App) GetPanelNodes(panelURL, apiToken string) ([]types.PanelNodeItem, error) {
+	nodes, err := remnawave.GetNodes(panelURL, apiToken)
+	if err != nil {
+		return nil, err
+	}
+	if nodes == nil {
+		return []types.PanelNodeItem{}, nil
+	}
+	return nodes, nil
 }
 
-func (a *App) GetPanelConfigProfiles(panelURL, apiToken string) []types.PanelProfileItem {
-	profiles, _ := remnawave.GetConfigProfiles(panelURL, apiToken)
-	return profiles
+func (a *App) GetPanelConfigProfiles(panelURL, apiToken string) ([]types.PanelProfileItem, error) {
+	profiles, err := remnawave.GetConfigProfiles(panelURL, apiToken)
+	if err != nil {
+		return nil, err
+	}
+	if profiles == nil {
+		return []types.PanelProfileItem{}, nil
+	}
+	return profiles, nil
 }
 
-func (a *App) GetPanelSquads(panelURL, apiToken string) []types.PanelSquadItem {
-	squads, _ := remnawave.GetInternalSquads(panelURL, apiToken)
-	return squads
+func (a *App) GetPanelSquads(panelURL, apiToken string) ([]types.PanelSquadItem, error) {
+	squads, err := remnawave.GetInternalSquads(panelURL, apiToken)
+	if err != nil {
+		return nil, err
+	}
+	if squads == nil {
+		return []types.PanelSquadItem{}, nil
+	}
+	return squads, nil
 }
 
 func (a *App) ApplyAntiProbingFirewall(server types.SavedServer, panelIP string, clientPorts []int, hideNodePort, stealthDrop, enableBBR bool) types.CommandResult {
@@ -215,15 +234,21 @@ func (a *App) OpenBrowserURL(rawURL string) {
 	if clean == "" {
 		return
 	}
+	parsed, err := url.Parse(clean)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return
+	}
+	safeURL := parsed.String()
 	if runtimeOS.GOOS == "windows" {
-		cmd := exec.Command("cmd", "/c", "start", "", clean)
+		cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", safeURL)
 		hideCmdWindow(cmd)
 		if err := cmd.Start(); err == nil {
+			go func() { _ = cmd.Wait() }()
 			return
 		}
 	}
 	if app := application.Get(); app != nil {
-		_ = app.Browser.OpenURL(clean)
+		_ = app.Browser.OpenURL(safeURL)
 	}
 }
 

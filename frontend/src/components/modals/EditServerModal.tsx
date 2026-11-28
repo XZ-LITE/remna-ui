@@ -651,10 +651,10 @@ export const EditServerModal: React.FC<EditServerModalProps> = ({
             justifyContent: "space-between",
           }}
         >
-          <button className="win-button" onClick={close}>
+          <button className="win-button" onClick={close} disabled={testingSSH || checkingIP}>
             Отмена
           </button>
-          <button className="win-button primary" onClick={onSave}>
+          <button className="win-button primary" onClick={onSave} disabled={testingSSH || checkingIP}>
             {isNew ? <Plus size={14} /> : <Check size={14} />}
             <span>{isNew ? "Добавить в каталог" : "Сохранить изменения"}</span>
           </button>

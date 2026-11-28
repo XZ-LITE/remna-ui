@@ -12,6 +12,7 @@ export interface WinConfirmModalProps {
   cancelLabel?: string;
   variant?: "primary" | "warning" | "danger";
   loading?: boolean;
+  zIndex?: number;
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }
@@ -25,6 +26,7 @@ export const WinConfirmModal: React.FC<WinConfirmModalProps> = ({
   cancelLabel = "Отмена",
   variant = "warning",
   loading = false,
+  zIndex = 1200,
   onConfirm,
   onClose,
 }) => {
@@ -48,6 +50,7 @@ export const WinConfirmModal: React.FC<WinConfirmModalProps> = ({
       onClose={onClose}
       maxWidth="460px"
       width="94%"
+      zIndex={zIndex}
       preventBackdropClose={loading}
     >
       {({ close }) => (

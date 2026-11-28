@@ -44,7 +44,13 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
       setAutoLockVal(vaultStatus?.auto_lock_minutes || 15);
       setActiveTab("status");
     }
-  }, [isOpen, vaultStatus]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && vaultStatus?.auto_lock_minutes !== undefined) {
+      setAutoLockVal(vaultStatus.auto_lock_minutes || 15);
+    }
+  }, [isOpen, vaultStatus?.auto_lock_minutes]);
 
   const isMasterEnabled = Boolean(vaultStatus?.enabled);
   const osBackendLabel =
@@ -130,9 +136,13 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       maxWidth="520px"
+      maxHeight="88vh"
       preventBackdropClose={loading}
       dialogStyle={{
-        padding: "24px",
+        padding: 0,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
         borderRadius: "12px",
         background: "var(--win-modal-bg)",
         boxShadow: "0 20px 40px rgba(0, 0, 0, 0.45)",
@@ -142,7 +152,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
       {({ close }) => (
         <>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "18px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 16px", flexShrink: 0, borderBottom: "1px solid var(--win-card-stroke)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
               style={{
@@ -172,12 +182,15 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
               type="button"
               className="win-button"
               style={{ padding: "0 8px", height: "26px" }}
+              disabled={loading}
               onClick={() => !loading && close()}
             >
               <X size={14} />
             </button>
           </WinTooltip>
         </div>
+
+        <div className="win-modal-body" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 24px 22px" }}>
 
         {/* Tab Selector if Master is Enabled */}
         {isMasterEnabled && activeTab === "status" && (
@@ -411,6 +424,7 @@ export const VaultSettingsModal: React.FC<VaultSettingsModalProps> = ({
             </div>
           </form>
         )}
+        </div>
         </>
       )}
     </WinModal>

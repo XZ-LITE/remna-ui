@@ -2,10 +2,55 @@ package admin
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"remna-ui/internal/types"
 )
+
+func sanitizePanelTargets(panelIP string) ([]string, error) {
+	clean := strings.TrimSpace(panelIP)
+	if clean == "" {
+		return nil, nil
+	}
+	if strings.ContainsAny(clean, "\r\n\"'`;|&$<>\\") {
+		return nil, fmt.Errorf("некорректный адрес панели: содержит недопустимые символы")
+	}
+	tokens := strings.FieldsFunc(clean, func(r rune) bool {
+		return r == ',' || r == ' ' || r == ';'
+	})
+	var ips []string
+	for _, tok := range tokens {
+		tok = strings.TrimSpace(tok)
+		tok = strings.TrimPrefix(tok, "https://")
+		tok = strings.TrimPrefix(tok, "http://")
+		if idx := strings.Index(tok, "/"); idx != -1 {
+			tok = tok[:idx]
+		}
+		if host, _, err := net.SplitHostPort(tok); err == nil {
+			tok = host
+		}
+		tok = strings.Trim(tok, "[]")
+		if tok == "" {
+			continue
+		}
+		if net.ParseIP(tok) != nil {
+			ips = append(ips, tok)
+			continue
+		}
+		resolved, err := net.LookupIP(tok)
+		if err != nil || len(resolved) == 0 {
+			return nil, fmt.Errorf("не удалось преобразовать адрес панели %q в IP: %v", tok, err)
+		}
+		for _, ip := range resolved {
+			if v4 := ip.To4(); v4 != nil {
+				ips = append(ips, v4.String())
+				break
+			}
+		}
+	}
+	return ips, nil
+}
 
 // BuildAntiProbingScript creates an idempotent shell script for Anti-Censorship/Anti-Probing
 func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, stealthDrop, enableBBR bool, nodePort, sshPort int) string {
@@ -93,9 +138,9 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 		sb.WriteString("iptables -I DOCKER-USER 1 -j REMNA_DOCKER\n\n")
 	}
 
-	// 6. Connect REMNA_INPUT into INPUT
+	// 6. Connect REMNA_INPUT at top of INPUT chain so UFW/existing rules don't shadow it
 	sb.WriteString("# 6. Link into INPUT chain\n")
-	sb.WriteString("iptables -C INPUT -j REMNA_INPUT 2>/dev/null || iptables -A INPUT -j REMNA_INPUT\n\n")
+	sb.WriteString("iptables -C INPUT -j REMNA_INPUT 2>/dev/null || iptables -I INPUT 1 -j REMNA_INPUT\n\n")
 
 	// 7. Stealth DROP (Eliminate TCP RST fingerprint)
 	if stealthDrop {
@@ -160,7 +205,23 @@ func BuildAntiProbingScript(panelIP string, clientPorts []int, hideNodePort, ste
 
 // ApplyAntiProbingFirewall executes the anti-probing firewall on the remote VPS
 func ApplyAntiProbingFirewall(server types.SavedServer, panelIP string, clientPorts []int, hideNodePort, stealthDrop, enableBBR bool) types.CommandResult {
-	script := BuildAntiProbingScript(panelIP, clientPorts, hideNodePort, stealthDrop, enableBBR, 2222, server.Port)
+	panelIPs, err := sanitizePanelTargets(panelIP)
+	if err != nil {
+		return types.CommandResult{Success: false, Error: err.Error()}
+	}
+	resolvedPanelIP := strings.Join(panelIPs, ",")
+
+	// Preserve non-2222 node port if node env configures a custom NODE_PORT
+	nodePort := 2222
+	script := BuildAntiProbingScript(resolvedPanelIP, clientPorts, hideNodePort, stealthDrop, enableBBR, nodePort, server.Port)
+	script = strings.Replace(script, "\nset -e\n", `
+set -e
+CUSTOM_NODE_PORT=$(grep -E '^(NODE_PORT|APP_PORT)=' /opt/remnawave/node/.env /opt/remnawave/.env 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"\r\n ' || true)
+`, 1)
+	if len(panelIPs) > 0 {
+		// Also guard against hardcoded 2222 mismatch when runtime CUSTOM_NODE_PORT differs
+		script = strings.Replace(script, fmt.Sprintf("--dport %d", nodePort), `--dport ${CUSTOM_NODE_PORT:-2222}`, -1)
+	}
 	client, err := getSSHClient(server)
 	if err != nil {
 		return types.CommandResult{Success: false, Error: fmt.Sprintf("Ошибка SSH: %v", err)}

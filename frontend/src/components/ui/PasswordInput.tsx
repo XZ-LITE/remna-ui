@@ -65,9 +65,9 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(({
         className={`win-textbox ${className}`}
         style={{
           width: "100%",
-          paddingRight: rightPadding,
-          paddingLeft: leftPadding,
           ...style,
+          paddingRight: rightPadding,
+          ...(leftPadding ? { paddingLeft: leftPadding } : {}),
         }}
         onKeyDown={(e) => {
           updateCapsLock(e);

@@ -3,6 +3,7 @@ package vault
 import (
 	"os"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -147,4 +148,59 @@ func TestLocalMachineEncryption(t *testing.T) {
 	if wrong == secret {
 		t.Fatalf("expected wrong machine ID not to decrypt secret")
 	}
+}
+
+func TestVault_CorruptedConfigStaysLocked(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "remna_vault_corrupt_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr := &Manager{storeDir: tempDir}
+	if err := os.WriteFile(mgr.configPath(), []byte("{not-json"), 0600); err != nil {
+		t.Fatalf("write corrupt config: %v", err)
+	}
+	mgr.loadConfig()
+	st := mgr.GetStatus()
+	if !st.Enabled || st.Unlocked || st.Message == "" {
+		t.Fatalf("expected corrupted config to stay locked with message, got: %+v", st)
+	}
+}
+
+func TestVault_NoDeadlockWithConcurrentReencrypt(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "remna_vault_race_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr := &Manager{storeDir: tempDir}
+	mgr.loadConfig()
+
+	var externalMu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			externalMu.Lock()
+			_, _ = mgr.EncryptSecret("secret-value")
+			_ = mgr.GetStatus()
+			externalMu.Unlock()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		_ = mgr.SetMasterPassword("", "StrongPass123!", func(dec func(string) (string, error), enc func(string) (string, error)) error {
+			externalMu.Lock()
+			defer externalMu.Unlock()
+			_, _ = enc("secret-value")
+			return nil
+		})
+	}()
+
+	wg.Wait()
 }

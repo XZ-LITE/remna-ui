@@ -431,7 +431,7 @@ export function App() {
 
   const [nodePanelUrl, setNodePanelUrl] = useState<string>(() => localStorage.getItem("rw_panel_url") || "");
 
-  const [nodeApiToken, setNodeApiToken] = useState<string>(() => localStorage.getItem("rw_api_token") || "");
+  const [nodeApiToken, setNodeApiToken] = useState<string>("");
   const [nodeName, setNodeName] = useState<string>("DE - Frankfurt #1");
 
   const [nodeCountry, setNodeCountry] = useState<string>("DE");
@@ -582,6 +582,7 @@ export function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const logBufferRef = useRef<LogEntry[]>([]);
   const logFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingDeployServerRef = useRef<types.SavedServer | null>(null);
 
   const flushLogs = useCallback(() => {
     if (logFlushTimerRef.current) {
@@ -649,11 +650,6 @@ export function App() {
             addToast("error", "Выберите профиль конфигурации и входящий порт (Inbound) для кастомной привязки ноды.");
             return false;
           }
-        } else {
-          if (!nodeSecret.trim()) {
-            addToast("error", "Укажите секретный ключ связи ноды с панелью (NODE_SECRET).");
-            return false;
-          }
         }
         if (deployDecoy && !nodeDecoyDomain.trim()) {
           addToast("error", "Укажите домен маскировочного сайта для SelfSteal Decoy или отключите опцию.");
@@ -692,6 +688,10 @@ export function App() {
         }
         if (useCloudflareDns && !cloudflareToken.trim()) {
           addToast("error", "Включен выпуск SSL через Cloudflare DNS, но не указан Cloudflare API токен.");
+          return false;
+        }
+        if (useCamouflage && (preset === "all-in-one" || components.includes("node")) && decoyTemplate === "clone" && !decoyCloneUrl.trim()) {
+          addToast("error", "Укажите URL сайта для клонирования маскировочного сайта.");
           return false;
         }
         if (useGate) {
@@ -1015,13 +1015,17 @@ export function App() {
         setVaultUnlockOpen(false);
         const st = await GetVaultStatus();
         setVaultStatus(st);
-        await loadServers();
+        await loadServers(activeTab === "wizard" && step === 1 && !isDeploying && !deployFinished);
 
         // Migrate legacy localStorage tokens if present
         const localToken = localStorage.getItem("rw_api_token");
         if (localToken) {
           await SetSecureValue("rw_api_token", localToken);
           localStorage.removeItem("rw_api_token");
+        }
+        const secToken = await GetSecureValue("rw_api_token");
+        if (secToken) {
+          setNodeApiToken(secToken);
         }
         return true;
       }
@@ -1037,7 +1041,13 @@ export function App() {
       const st = await GetVaultStatus();
       setVaultStatus(st);
       setVaultUnlockOpen(true);
-      await loadServers();
+      setNodeApiToken("");
+      setSshPass("");
+      setCloudflareToken("");
+      setAdminPassword("");
+      setDeployedAdminPass("");
+      setNodeSecret("");
+      await loadServers(false);
       addToast("info", "Хранилище заблокировано");
     } catch (err: any) {
       addToast("error", `Ошибка блокировки: ${err?.message || err}`);
@@ -1048,7 +1058,7 @@ export function App() {
     const res = await SetMasterPassword(oldPass, newPass);
     if (res.success) {
       await checkVaultStatus();
-      await loadServers();
+      await loadServers(false);
       return true;
     }
     throw new Error(res.error || "Не удалось установить мастер-пароль");
@@ -1058,7 +1068,7 @@ export function App() {
     const res = await DisableMasterPassword(currentPass);
     if (res.success) {
       await checkVaultStatus();
-      await loadServers();
+      await loadServers(false);
       return true;
     }
     throw new Error(res.error || "Не удалось отключить мастер-пароль");
@@ -1078,12 +1088,17 @@ export function App() {
     const initApp = async () => {
       const isUnlocked = await checkVaultStatus();
       if (isUnlocked) {
+        const localToken = localStorage.getItem("rw_api_token");
+        if (localToken) {
+          await SetSecureValue("rw_api_token", localToken);
+          localStorage.removeItem("rw_api_token");
+        }
         const secToken = await GetSecureValue("rw_api_token");
         if (secToken && !nodeApiToken) {
           setNodeApiToken(secToken);
         }
       }
-      loadServers();
+      loadServers(true);
     };
     initApp();
   }, []);
@@ -1102,14 +1117,14 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [vaultStatus]);
 
-  const loadServers = async () => {
+  const loadServers = async (autoNavigate: boolean = true) => {
     setLoadingServersList(true);
     try {
       const list = await GetServers();
       setSavedServers(list || []);
 
-      // If we have servers, auto-open the servers dashboard and poll status
-      if (list && list.length > 0) {
+      // If we have servers on startup, open the servers dashboard and poll status
+      if (autoNavigate && list && list.length > 0) {
         setActiveTab("servers");
         if (Object.keys(serverStatus).length === 0) {
           handleInspectServer(list[0]);
@@ -1151,8 +1166,40 @@ export function App() {
         if (data.admin_pass) setDeployedAdminPass(data.admin_pass);
         if (data.sub_url) setDeployedSubUrl(data.sub_url);
         if (data.panel_url) setDeployedWebUrl(data.panel_url);
+
+        const pending = pendingDeployServerRef.current;
+        pendingDeployServerRef.current = null;
+        if (pending) {
+          (async () => {
+            try {
+              const existingList = await GetServers();
+              const existing = (existingList || []).find(
+                (s) =>
+                  (s.host || "").trim() === (pending.host || "").trim() &&
+                  (s.port || 22) === (pending.port || 22)
+              );
+              const serverToSave = new types.SavedServer({
+                ...pending,
+                id: existing?.id || pending.id,
+                parent_master_id: existing?.parent_master_id || pending.parent_master_id || "",
+                location_code: existing?.location_code || pending.location_code || "",
+                decoy_domain: pending.decoy_domain || existing?.decoy_domain || "",
+                is_external_master: existing?.is_external_master ?? pending.is_external_master ?? false,
+                web_url: data.panel_url || pending.web_url || existing?.web_url || "",
+                sub_url: data.sub_url || pending.sub_url || existing?.sub_url || "",
+                admin_password: data.admin_pass || pending.admin_password || existing?.admin_password || "",
+                last_seen: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString(),
+              });
+              await SaveServer(serverToSave);
+              await loadServers(false);
+            } catch (saveErr) {
+              console.error("Failed to save deployed server:", saveErr);
+            }
+          })();
+        }
         addToast("success", "Развертывание стека успешно завершено!");
       } else {
+        pendingDeployServerRef.current = null;
         setIsTerminalExpanded(true);
         addToast("error", "Сбой установки. Проверьте журнал ошибок в терминале.");
       }
@@ -1428,7 +1475,7 @@ export function App() {
   const handleOpenVPNProbeModal = async (srv: types.SavedServer, customVless?: string) => {
     setVpnProbeModal({ server: srv, result: null, loading: true });
     try {
-      const port = srv.port || 443;
+      const port = 443;
       const res = await ProbeVPNTraffic(srv.host, port, srv.decoy_domain || "", customVless || "", srv, srv.password || "");
       setVpnProbeModal({ server: srv, result: res, loading: false });
     } catch (err: any) {
@@ -1491,25 +1538,16 @@ export function App() {
   // Pre-fill credentials from a saved server
 
   const handlePrefillFromServer = (srv: types.SavedServer) => {
-
     setSshHost(srv.host);
-
     setSshPort(srv.port || 22);
-
     setSshUser(srv.username || "root");
-
-    if ((srv as any).password) setSshPass((srv as any).password);
-
+    setSshPass((srv as any).password || "");
+    setSshKey((srv as any).ssh_key || "");
     if (srv.label && srv.label.includes(".")) {
-
       setPanelDomain(srv.label);
-
       setNodeDecoyDomain(srv.label);
-
     }
-
     addToast("info", `Загружены реквизиты сервера: ${srv.label || srv.host}`);
-
   };
 
 
@@ -1576,7 +1614,8 @@ export function App() {
       if (res.success) {
         addToast("success", `Связь с панелью подтверждена! Найдено нод: ${res.nodes_count}`);
         localStorage.setItem("rw_panel_url", nodePanelUrl.trim());
-        localStorage.setItem("rw_api_token", nodeApiToken.trim());
+        localStorage.removeItem("rw_api_token");
+        await SetSecureValue("rw_api_token", nodeApiToken.trim()).catch(() => {});
         // Auto-load config profiles and squads for node integration
         loadPanelEntities(nodePanelUrl.trim(), nodeApiToken.trim());
       } else {
@@ -1680,6 +1719,9 @@ export function App() {
     let finalSecret = nodeSecret.trim();
     const cleanDecoyDomain = nodeDecoyDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
     const cleanHostAddress = customHostAddress.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    const cleanDomain = panelDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    const cleanSubDomain = subDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+    const useSubDomain = Boolean(cleanSubDomain);
 
     if (preset === "node-only") {
       if (deployDecoy && !cleanDecoyDomain) {
@@ -1698,7 +1740,55 @@ export function App() {
         addToast("error", `Порт ${nodePort} зарезервирован для системных служб. Выберите другой порт связи.`);
         return;
       }
+    } else {
+      if (!cleanDomain) {
+        addToast("error", "Укажите домен панели управления (например: panel.domain.com) для выпуска SSL-сертификата и настройки веб-сервера.");
+        return;
+      }
+      if (useSubDomain && cleanSubDomain.toLowerCase() === cleanDomain.toLowerCase()) {
+        addToast("error", "Домен страницы подписок должен отличаться от домена панели управления.");
+        return;
+      }
+      if (components.includes("panel") && adminCreationMode === "custom") {
+        if (!adminUsername.trim()) {
+          addToast("error", "Укажите логин суперадминистратора.");
+          return;
+        }
+        if (adminPassword.length < 24 || !/[A-Z]/.test(adminPassword) || !/[a-z]/.test(adminPassword) || !/[0-9]/.test(adminPassword)) {
+          addToast("error", "Пароль суперадминистратора должен содержать минимум 24 символа, включая заглавную букву, строчную букву и цифру (политика безопасности Remnawave).");
+          return;
+        }
+      }
+      if (useCamouflage && (preset === "all-in-one" || components.includes("node")) && decoyTemplate === "clone" && !decoyCloneUrl.trim()) {
+        addToast("error", "Укажите URL сайта для клонирования маскировочного сайта.");
+        return;
+      }
     }
+
+    if (useCloudflareDns && !cloudflareToken.trim()) {
+      addToast("error", "Включен выпуск SSL через Cloudflare DNS, но не указан Cloudflare API токен.");
+      return;
+    }
+
+    if (useGate) {
+      const cleanGate = secretGate.trim().replace(/^\/+/, "");
+      if (!cleanGate) {
+        addToast("error", "Укажите путь секретного гейта (например: admin_gate).");
+        return;
+      }
+      if (!/^[a-zA-Z0-9_\-]+$/.test(cleanGate)) {
+        addToast("error", "Секретный гейт может содержать только латинские буквы, цифры, дефис и подчеркивание.");
+        return;
+      }
+    }
+
+    // Reset previous deployment summary state before starting a new run
+    pendingDeployServerRef.current = null;
+    setDeployedWebUrl("");
+    setDeployedAdminUser("");
+    setDeployedAdminPass("");
+    setDeployedSubUrl("");
+    setDeployedAdminMode(adminCreationMode);
 
     if (preset === "node-only" && nodeLinkMode === "auto") {
       if (!nodePanelUrl.trim() || !nodeApiToken.trim()) {
@@ -1741,7 +1831,7 @@ export function App() {
             port: nodePort,
             traffic_multiplier: 1.0,
             decoy_domain: deployDecoy ? cleanDecoyDomain : "",
-            port_mode: portMode,
+            port_mode: "classic",
             torrent_blocker: torrentBlocker,
             block_spam_ports: blockSpamPorts,
             integration_mode: nodeIntegrationMode,
@@ -1782,56 +1872,6 @@ export function App() {
           { status: "error", message: `Сбой регистрации ноды в API: ${err.message || err}` },
         ]);
         addToast("error", `Сбой API панели: ${err.message || err}`);
-        return;
-      }
-    }
-
-    const cleanDomain = panelDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-    const cleanSubDomain = subDomain.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-    const useSubDomain = Boolean(cleanSubDomain);
-
-    if (preset !== "node-only" && !cleanDomain) {
-      addToast("error", "Укажите домен панели управления (например: panel.domain.com) для выпуска SSL-сертификата и настройки веб-сервера.");
-      return;
-    }
-
-    if (preset !== "node-only" && useSubDomain) {
-      if (!cleanSubDomain) {
-        addToast("error", "Укажите отдельный домен для страницы подписок.");
-        return;
-      }
-      if (cleanSubDomain.toLowerCase() === cleanDomain.toLowerCase()) {
-        addToast("error", "Домен страницы подписок должен отличаться от домена панели управления.");
-        return;
-      }
-    }
-
-    if (preset !== "node-only" && components.includes("panel")) {
-      if (adminCreationMode === "custom") {
-        if (!adminUsername.trim()) {
-          addToast("error", "Укажите логин суперадминистратора.");
-          return;
-        }
-        if (adminPassword.length < 24 || !/[A-Z]/.test(adminPassword) || !/[a-z]/.test(adminPassword) || !/[0-9]/.test(adminPassword)) {
-          addToast("error", "Пароль суперадминистратора должен содержать минимум 24 символа, включая заглавную букву, строчную букву и цифру (политика безопасности Remnawave).");
-          return;
-        }
-      }
-    }
-
-    if (useCloudflareDns && !cloudflareToken.trim()) {
-      addToast("error", "Включен выпуск SSL через Cloudflare DNS, но не указан Cloudflare API токен.");
-      return;
-    }
-
-    if (useGate) {
-      const cleanGate = secretGate.trim().replace(/^\/+/, "");
-      if (!cleanGate) {
-        addToast("error", "Укажите путь секретного гейта (например: admin_gate).");
-        return;
-      }
-      if (!/^[a-zA-Z0-9_\-]+$/.test(cleanGate)) {
-        addToast("error", "Секретный гейт может содержать только латинские буквы, цифры, дефис и подчеркивание.");
         return;
       }
     }
@@ -1939,50 +1979,37 @@ export function App() {
       }
 
     } else {
-
       if (preset !== "node-only" || nodeLinkMode !== "auto") {
         setLogs([]);
       }
-
       setIsDeploying(true);
-
       setDeployFinished(false);
+      pendingDeployServerRef.current = new types.SavedServer({
+        id: `srv-${Date.now()}`,
+        label: cleanDomain || sshHost.trim(),
+        host: sshHost.trim(),
+        port: sshPort,
+        username: sshUser.trim() || "root",
+        password: sshPass,
+        ssh_key: sshKey.trim(),
+        web_url: preset === "node-only" ? "" : webUrl,
+        role: preset === "node-only" ? "node" : "master",
+        decoy_domain: deployDecoy ? cleanDecoyDomain : "",
+        port_mode: preset === "node-only" ? "classic" : portMode,
+        xray_core_type: xrayCoreType,
+        api_token: nodeApiToken.trim(),
+        node_secret: finalSecret,
+        last_seen: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString(),
+      });
 
       try {
-
         await StartDeployment(plan);
-
-        // Save this server to catalog
-
-        await SaveServer(
-
-          new types.SavedServer({
-            id: `srv-${Date.now()}`,
-            label: cleanDomain || sshHost,
-            host: sshHost,
-            port: sshPort,
-            username: sshUser,
-            password: sshPass,
-            ssh_key: sshKey,
-            web_url: preset === "node-only" ? "" : webUrl,
-            role: preset === "node-only" ? "node" : "master",
-            last_seen: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString(),
-          })
-
-        );
-
-        loadServers();
-
       } catch (err: any) {
-
+        pendingDeployServerRef.current = null;
         setIsDeploying(false);
-
-        setLogs([{ status: "error", message: `Не удалось начать установку: ${err}` }]);
-
+        setLogs((prev) => [...prev, { status: "error", message: `Не удалось начать установку: ${err}` }]);
         addToast("error", `Ошибка запуска: ${err}`);
-
       }
-
     }
 
   };
@@ -2002,7 +2029,7 @@ export function App() {
         // Manual user trigger explicitly resets Circuit Breaker cooldown
         await ResetCircuitBreaker(srv.id);
       }
-      const res = await GetServerStatus(srv, (srv as any).password || sshPass);
+      const res = await GetServerStatus(srv, (srv as any).password || "");
 
       setServerStatus((prev) => ({ ...prev, [srv.id]: res }));
 
@@ -2071,6 +2098,7 @@ export function App() {
         const idx = currentIndex++;
         const srv = savedServers[idx];
         try {
+          await ResetCircuitBreaker(srv.id).catch(() => {});
           const ok = await handleInspectServer(srv, true);
           if (ok) onlineCount++;
           else offlineCount++;
@@ -3052,10 +3080,12 @@ export function App() {
 
     let calculatedWebUrl = "";
     if (editServerModal.role === "master") {
-      if (editServerModal.webUrl?.trim()) {
-        calculatedWebUrl = editServerModal.webUrl.trim();
-        if (!calculatedWebUrl.startsWith("http://") && !calculatedWebUrl.startsWith("https://")) {
-          calculatedWebUrl = `https://${calculatedWebUrl}`;
+      if (editServerModal.webUrl !== undefined) {
+        const rawWebUrl = editServerModal.webUrl.trim();
+        if (rawWebUrl) {
+          calculatedWebUrl = rawWebUrl.startsWith("http://") || rawWebUrl.startsWith("https://")
+            ? rawWebUrl
+            : `https://${rawWebUrl}`;
         }
       } else if (server.web_url) {
         calculatedWebUrl = server.web_url;
@@ -3139,9 +3169,17 @@ export function App() {
 
   // Delete Server
   const handleDeleteServer = async (id: string) => {
-    await DeleteServer(id);
-    loadServers();
-    addToast("info", "Сервер удален из каталога");
+    try {
+      const ok = await DeleteServer(id);
+      if (!ok) {
+        addToast("error", "Не удалось удалить сервер из каталога");
+        return;
+      }
+      await loadServers(false);
+      addToast("info", "Сервер удален из каталога");
+    } catch (e: any) {
+      addToast("error", `Ошибка удаления сервера: ${e?.message || e}`);
+    }
   };
 
   // Interactive Delete Server with Fluent confirmation
@@ -3170,13 +3208,17 @@ export function App() {
   // Copy text to Clipboard (Stage 5: Micro-Interactions without toast spam)
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const handleCopy = (text: string, label: string, key?: string) => {
-    navigator.clipboard.writeText(text);
-    if (key) {
-      setCopiedKey(key);
-      setTimeout(() => setCopiedKey((curr) => (curr === key ? null : curr)), 1500);
-    } else {
-      addToast("success", `${label} скопировано в буфер!`);
+  const handleCopy = async (text: string, label: string, key?: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (key) {
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((curr) => (curr === key ? null : curr)), 1500);
+      } else {
+        addToast("success", `${label} скопировано в буфер!`);
+      }
+    } catch {
+      addToast("error", `Не удалось скопировать ${label.toLowerCase()} в буфер обмена`);
     }
   };
 
@@ -6786,23 +6828,14 @@ export function App() {
                           )}
 
                           <button
-
                             className="win-button"
-
                             onClick={() => {
-
                               setActiveTab("servers");
-
-                              loadServers();
-
+                              loadServers(false);
                             }}
-
                           >
-
                             <Server size={14} />
-
                             <span>Перейти в «Мои серверы»</span>
-
                           </button>
 
                         </div>
@@ -7532,21 +7565,13 @@ export function App() {
           onClose={() => setInspectModal(null)}
 
           onRefresh={async () => {
-
             try {
-
               const out = await GetContainerLogs(inspectModal.server, inspectModal.container);
-
               setInspectModal((prev) => (prev ? { ...prev, logs: out || "Логи пусты." } : null));
-
               addToast("info", "Логи обновлены");
-
-            } catch (e) {
-
-              console.error(e);
-
+            } catch (e: any) {
+              addToast("error", `Ошибка обновления логов: ${e?.message || e}`);
             }
-
           }}
 
           onToggleAutoRefresh={() =>

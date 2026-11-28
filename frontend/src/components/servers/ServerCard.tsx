@@ -149,7 +149,9 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                       // 2. Active containers detected on VPS (remnawave = panel, remnanode = node)
                       // 3. Valid web_url (only master panels have web_url)
                       // 4. Default: raw IP or server with no web_url is an Edge Node
-                      const isMaster = srv.role === "master"
+                      const isMaster = (srv as any).is_external_master
+                        ? true
+                        : srv.role === "master"
                         ? true
                         : srv.role === "node"
                         ? false
@@ -180,7 +182,10 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                       };
 
                       const rawSubTab = subTab || "overview";
-                      const currentSubTab = rawSubTab === "containers" ? "overview" : rawSubTab;
+                      const normalizedSubTab = rawSubTab === "containers" ? "overview" : rawSubTab;
+                      const currentSubTab = isMaster
+                        ? (normalizedSubTab === "maintenance" ? "maintenance" : "overview")
+                        : (normalizedSubTab === "security" ? "security" : "overview");
 
                       return (
                         <div
@@ -409,7 +414,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                               setActiveServerMenu(null);
                                               handleRestartAll(srv);
                                             }}
-                                            disabled={actionLoading[`restart-${srv.id}`]}
+                                            disabled={actionLoading[`restart-all-${srv.id}`]}
                                           >
                                             <RotateCcw size={14} />
                                             <span>Перезапустить стек</span>
@@ -420,7 +425,7 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                               setActiveServerMenu(null);
                                               handleUpdateStack(srv);
                                             }}
-                                            disabled={actionLoading[`pull-${srv.id}`]}
+                                            disabled={actionLoading[`update-stack-${srv.id}`]}
                                           >
                                             <Download size={14} />
                                             <span>Обновить образы (Pull & Up)</span>

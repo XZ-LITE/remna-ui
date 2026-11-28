@@ -91,7 +91,7 @@ func TestPanelAPI(panelURL, apiToken string) types.PanelInfoResult {
 		return types.PanelInfoResult{Success: false, Error: "Не удалось прочитать ответ панели"}
 	}
 
-	// Count nodes in response
+	// Count nodes in response (supports raw array, wrapper {response: [...]}, and Remnawave v3 {response: {nodes: [...]}})
 	nodesCount := 0
 	var rawList []any
 	if err := json.Unmarshal(body, &rawList); err == nil {
@@ -101,6 +101,10 @@ func TestPanelAPI(panelURL, apiToken string) types.PanelInfoResult {
 		if err := json.Unmarshal(body, &wrapper); err == nil {
 			if respList, ok := wrapper["response"].([]any); ok {
 				nodesCount = len(respList)
+			} else if respMap, ok := wrapper["response"].(map[string]any); ok {
+				if nodesList, ok := respMap["nodes"].([]any); ok {
+					nodesCount = len(nodesList)
+				}
 			}
 		}
 	}
@@ -287,13 +291,11 @@ func fetchActiveConfigProfile(targetURL, token, decoyDomain string, client *http
 	var candidateInbounds []string
 
 	if cleanDecoy != "" {
-		// User requested SelfSteal Decoy: look specifically for a profile configured for SelfSteal
+		// User requested SelfSteal Decoy: match a profile explicitly configured for this domain first
 		cleanDecoyLower := strings.ToLower(cleanDecoy)
 		for _, p := range list {
-			name, _ := p["name"].(string)
-			desc, _ := p["description"].(string)
-			combined := strings.ToLower(name + " " + desc)
-			if strings.Contains(combined, "selfsteal") || strings.Contains(combined, cleanDecoyLower) {
+			rawJSON, _ := json.Marshal(p)
+			if strings.Contains(strings.ToLower(string(rawJSON)), cleanDecoyLower) {
 				u, ibs := extractProfileUUIDAndInbounds(targetURL, token, client, p)
 				if u != "" && len(ibs) > 0 {
 					candidateUUID = u
@@ -302,9 +304,9 @@ func fetchActiveConfigProfile(targetURL, token, decoyDomain string, client *http
 				}
 			}
 		}
-		// If no dedicated SelfSteal profile exists yet, trigger auto-creation
+		// If no dedicated SelfSteal profile matches this domain yet, trigger auto-creation
 		if candidateUUID == "" {
-			return "", nil, fmt.Errorf("no selfsteal profile found in panel")
+			return "", nil, fmt.Errorf("no selfsteal profile found for domain %s", cleanDecoy)
 		}
 	} else {
 		// User requested Classic Reality: prioritize Standard VLESS Reality or any Reality profile
@@ -571,14 +573,13 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 		req.Name = fmt.Sprintf("Node-%s-%d", req.Country, req.Port)
 	}
 
-	// Self-healing: check if stale/disconnected nodes with this IP address already exist in panel
+	// Self-healing: remove stale disconnected node entries matching IP and port without touching active connected nodes
 	existingNodes, errGet := GetNodes(targetURL, cleanToken)
 	if errGet == nil {
 		reqAddrClean := strings.Trim(strings.TrimSpace(req.Address), "[]")
 		for _, n := range existingNodes {
 			nodeAddrClean := strings.Trim(strings.TrimSpace(n.Address), "[]")
-			if strings.EqualFold(nodeAddrClean, reqAddrClean) {
-				// Clean up all orphaned/disconnected duplicate node entries so a fresh node with a valid SECRET_KEY can be registered
+			if strings.EqualFold(nodeAddrClean, reqAddrClean) && !n.IsConnected && (n.Port == 0 || n.Port == req.Port) {
 				delReq, errDel := http.NewRequest("DELETE", fmt.Sprintf("%s/api/nodes/%s", targetURL, n.UUID), nil)
 				if errDel == nil {
 					delReq.Header.Set("Authorization", "Bearer "+cleanToken)
@@ -631,9 +632,13 @@ func CreateNodeInPanel(panelURL, apiToken string, req types.CreateNodeRequest) t
 	}
 
 	if profileUUID != "" {
+		activeInbounds := inbounds
+		if activeInbounds == nil {
+			activeInbounds = []string{}
+		}
 		payload["configProfile"] = map[string]any{
 			"activeConfigProfileUuid": profileUUID,
-			"activeInbounds":          inbounds,
+			"activeInbounds":          activeInbounds,
 		}
 	}
 
@@ -823,8 +828,8 @@ func CreateHostInPanel(panelURL, apiToken, profileUUID, inboundUUID, hostAddress
 	if remark == "" {
 		remark = "Reality Host"
 	}
-	if len(remark) > 30 {
-		remark = remark[:30]
+	if runes := []rune(remark); len(runes) > 30 {
+		remark = string(runes[:30])
 	}
 	cleanSNI := strings.TrimSpace(sni)
 	if cleanSNI == "" {

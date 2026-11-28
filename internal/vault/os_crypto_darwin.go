@@ -5,6 +5,7 @@ package vault
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -84,29 +85,32 @@ func (m *Manager) getOSProtectionBackend() string {
 	return "local_machine"
 }
 
-func (m *Manager) encryptOSSecret(secret string) string {
+func (m *Manager) encryptOSSecret(secret string) (string, error) {
 	if secret == "" || isEncryptedSecret(secret) {
-		return secret
+		return secret, nil
 	}
 	if key, ok := m.resolveDarwinOSKey(); ok {
 		if enc, err := crypto.EncryptAESGCM([]byte(secret), key); err == nil {
-			return prefixOS + enc
+			return prefixOS + enc, nil
 		}
 	}
-	return encryptLocalMachine(m.storeDir, getDarwinPlatformUUID(), secret)
+	return encryptLocalMachine(m.storeDir, getDarwinPlatformUUID(), secret), nil
 }
 
-func (m *Manager) decryptOSSecret(encrypted string) string {
+func (m *Manager) decryptOSSecret(encrypted string) (string, error) {
 	if strings.HasPrefix(encrypted, prefixOS) {
-		if key, ok := m.resolveDarwinOSKey(); ok {
-			if plain, err := crypto.DecryptAESGCM(strings.TrimPrefix(encrypted, prefixOS), key); err == nil {
-				return string(plain)
-			}
+		key, ok := m.resolveDarwinOSKey()
+		if !ok {
+			return "", fmt.Errorf("macOS Keychain недоступен для расшифровки")
 		}
-		return encrypted
+		plain, err := crypto.DecryptAESGCM(strings.TrimPrefix(encrypted, prefixOS), key)
+		if err != nil {
+			return "", err
+		}
+		return string(plain), nil
 	}
 	if strings.HasPrefix(encrypted, prefixLocal) {
-		return decryptLocalMachine(m.storeDir, getDarwinPlatformUUID(), encrypted)
+		return decryptLocalMachine(m.storeDir, getDarwinPlatformUUID(), encrypted), nil
 	}
-	return encrypted
+	return encrypted, nil
 }

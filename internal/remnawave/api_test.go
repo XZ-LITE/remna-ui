@@ -101,7 +101,7 @@ func TestCreateNodeInPanel_Success(t *testing.T) {
 			return
 		}
 
-		if (r.Method == http.MethodPatch || r.Method == http.MethodPut) && strings.HasPrefix(r.URL.Path, "/api/internal-squads/") {
+		if (r.Method == http.MethodPatch || r.Method == http.MethodPut) && (r.URL.Path == "/api/internal-squads" || strings.HasPrefix(r.URL.Path, "/api/internal-squads/")) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"success":true}`))
 			return

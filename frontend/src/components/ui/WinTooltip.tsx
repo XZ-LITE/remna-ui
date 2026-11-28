@@ -161,7 +161,7 @@ export const WinTooltip: React.FC<WinTooltipProps> = ({
   }, []);
 
   const childProps = children.props as any;
-  const existingRef = childProps?.ref ?? (children as any).ref;
+  const existingRef = childProps?.ref;
 
   const mergedRef = useCallback(
     (node: HTMLElement | null) => {
@@ -190,6 +190,7 @@ export const WinTooltip: React.FC<WinTooltipProps> = ({
       if (typeof childProps?.onMouseDown === "function") childProps.onMouseDown(e);
     },
     onFocus: (e: React.FocusEvent) => {
+      scheduleShow();
       if (typeof childProps?.onFocus === "function") childProps.onFocus(e);
     },
     onBlur: (e: React.FocusEvent) => {

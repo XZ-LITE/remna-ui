@@ -58,7 +58,7 @@ export const VaultUnlockModal: React.FC<VaultUnlockModalProps> = ({
       isOpen={isOpen}
       onClose={() => {}}
       maxWidth="460px"
-      zIndex={10000}
+      zIndex={16000}
       preventBackdropClose={true}
       dialogStyle={{
         padding: "24px",

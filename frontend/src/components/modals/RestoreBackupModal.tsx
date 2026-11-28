@@ -64,7 +64,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
             <div style={{ fontSize: "12px", color: "var(--win-text-secondary)", marginBottom: "4px" }}>
               Выбранный архив резервной копии:
             </div>
-            <div style={{ background: "rgba(255,255,255,0.04)", padding: "10px 14px", borderRadius: "6px", border: "1px solid var(--win-card-stroke)", fontFamily: "monospace", fontSize: "12px", color: "#38bdf8", wordBreak: "break-all" }}>
+            <div style={{ background: "var(--win-fill-card-secondary)", padding: "10px 14px", borderRadius: "6px", border: "1px solid var(--win-card-stroke)", fontFamily: "monospace", fontSize: "12px", color: "var(--win-accent)", wordBreak: "break-all" }}>
               {fileName}
             </div>
           </div>
@@ -199,7 +199,7 @@ export const RestoreBackupModal: React.FC<RestoreBackupModalProps> = ({
           </label>
 
           {/* Warning */}
-          <div style={{ display: "flex", gap: "10px", padding: "10px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "6px", fontSize: "11.5px", color: "#fca5a5", lineHeight: "1.4" }}>
+          <div style={{ display: "flex", gap: "10px", padding: "10px 12px", background: "var(--win-status-danger-bg)", border: "1px solid rgba(239,68,68,0.28)", borderRadius: "6px", fontSize: "11.5px", color: "var(--win-status-danger)", lineHeight: "1.4" }}>
             <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
             <div>
               Во время восстановления контейнеры стека будут временно остановлены для безопасного разрыва активных соединений и предотвращения конфликтов в базе данных.

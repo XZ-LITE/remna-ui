@@ -172,6 +172,36 @@ func GetSavedServers() []types.SavedServer {
 	return loadServersUnlocked()
 }
 
+func encryptServerSecrets(srv *types.SavedServer, vMgr *vault.Manager) error {
+	var err error
+	if srv.Password != "" {
+		if srv.Password, err = vMgr.EncryptSecret(srv.Password); err != nil {
+			return fmt.Errorf("ошибка шифрования пароля: %w", err)
+		}
+	}
+	if srv.AdminPassword != "" {
+		if srv.AdminPassword, err = vMgr.EncryptSecret(srv.AdminPassword); err != nil {
+			return fmt.Errorf("ошибка шифрования пароля панели: %w", err)
+		}
+	}
+	if srv.SSHKey != "" {
+		if srv.SSHKey, err = vMgr.EncryptSecret(srv.SSHKey); err != nil {
+			return fmt.Errorf("ошибка шифрования SSH-ключа: %w", err)
+		}
+	}
+	if srv.ApiToken != "" {
+		if srv.ApiToken, err = vMgr.EncryptSecret(srv.ApiToken); err != nil {
+			return fmt.Errorf("ошибка шифрования API-токена: %w", err)
+		}
+	}
+	if srv.NodeSecret != "" {
+		if srv.NodeSecret, err = vMgr.EncryptSecret(srv.NodeSecret); err != nil {
+			return fmt.Errorf("ошибка шифрования секрета ноды: %w", err)
+		}
+	}
+	return nil
+}
+
 func SaveServer(server types.SavedServer) error {
 	vMgr := vault.GetManager()
 	status := vMgr.GetStatus()
@@ -219,40 +249,8 @@ func SaveServer(server types.SavedServer) error {
 	toSave := make([]types.SavedServer, len(servers))
 	copy(toSave, servers)
 	for i := range toSave {
-		if toSave[i].Password != "" {
-			enc, err := vMgr.EncryptSecret(toSave[i].Password)
-			if err != nil {
-				return fmt.Errorf("ошибка шифрования пароля: %w", err)
-			}
-			toSave[i].Password = enc
-		}
-		if toSave[i].AdminPassword != "" {
-			enc, err := vMgr.EncryptSecret(toSave[i].AdminPassword)
-			if err != nil {
-				return fmt.Errorf("ошибка шифрования пароля панели: %w", err)
-			}
-			toSave[i].AdminPassword = enc
-		}
-		if toSave[i].SSHKey != "" {
-			enc, err := vMgr.EncryptSecret(toSave[i].SSHKey)
-			if err != nil {
-				return fmt.Errorf("ошибка шифрования SSH-ключа: %w", err)
-			}
-			toSave[i].SSHKey = enc
-		}
-		if toSave[i].ApiToken != "" {
-			enc, err := vMgr.EncryptSecret(toSave[i].ApiToken)
-			if err != nil {
-				return fmt.Errorf("ошибка шифрования API-токена: %w", err)
-			}
-			toSave[i].ApiToken = enc
-		}
-		if toSave[i].NodeSecret != "" {
-			enc, err := vMgr.EncryptSecret(toSave[i].NodeSecret)
-			if err != nil {
-				return fmt.Errorf("ошибка шифрования секрета ноды: %w", err)
-			}
-			toSave[i].NodeSecret = enc
+		if err := encryptServerSecrets(&toSave[i], vMgr); err != nil {
+			return err
 		}
 	}
 
@@ -285,20 +283,8 @@ func DeleteServer(id string) error {
 	copy(toSave, filtered)
 
 	for i := range toSave {
-		if toSave[i].Password != "" {
-			toSave[i].Password, _ = vMgr.EncryptSecret(toSave[i].Password)
-		}
-		if toSave[i].AdminPassword != "" {
-			toSave[i].AdminPassword, _ = vMgr.EncryptSecret(toSave[i].AdminPassword)
-		}
-		if toSave[i].SSHKey != "" {
-			toSave[i].SSHKey, _ = vMgr.EncryptSecret(toSave[i].SSHKey)
-		}
-		if toSave[i].ApiToken != "" {
-			toSave[i].ApiToken, _ = vMgr.EncryptSecret(toSave[i].ApiToken)
-		}
-		if toSave[i].NodeSecret != "" {
-			toSave[i].NodeSecret, _ = vMgr.EncryptSecret(toSave[i].NodeSecret)
+		if err := encryptServerSecrets(&toSave[i], vMgr); err != nil {
+			return err
 		}
 	}
 
@@ -592,6 +578,19 @@ func checkSSHClientAlive(client *ssh.Client, timeout time.Duration) bool {
 }
 
 // getPooledSession returns an active SSH session from a pooled, keepalive-verified SSH client,
+func releasePooledClient(key string, sess *ssh.Session, target *ssh.Client) {
+	sess.Close()
+	sshPoolMu.Lock()
+	if e, ok := sshPool[key]; ok && e.client == target {
+		e.inUse--
+		if e.inUse < 0 {
+			e.inUse = 0
+		}
+		e.lastUsed = time.Now()
+	}
+	sshPoolMu.Unlock()
+}
+
 // along with a release function that must be deferred by the caller to return the connection to the idle pool.
 func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	key := getSSHKey(server)
@@ -614,25 +613,19 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 			session, sessErr := existingClient.NewSession()
 			if sessErr == nil {
 				sshPoolMu.Lock()
+				stillPooled := false
 				if e, ok := sshPool[key]; ok && e.client == existingClient {
 					e.inUse++
 					e.lastUsed = time.Now()
+					stillPooled = true
 				}
 				sshPoolMu.Unlock()
 
-				release := func() {
-					session.Close()
-					sshPoolMu.Lock()
-					if e, ok := sshPool[key]; ok {
-						e.inUse--
-						if e.inUse < 0 {
-							e.inUse = 0
-						}
-						e.lastUsed = time.Now()
-					}
-					sshPoolMu.Unlock()
+				if stillPooled {
+					return session, func() { releasePooledClient(key, session, existingClient) }, nil
 				}
-				return session, release, nil
+				// Entry was swapped while checking; fall through or release safely without touching new entry
+				return session, func() { session.Close() }, nil
 			}
 		}
 
@@ -670,20 +663,7 @@ func getPooledSession(server types.SavedServer) (*ssh.Session, func(), error) {
 	}
 	sshPoolMu.Unlock()
 
-	release := func() {
-		session.Close()
-		sshPoolMu.Lock()
-		if e, ok := sshPool[key]; ok {
-			e.inUse--
-			if e.inUse < 0 {
-				e.inUse = 0
-			}
-			e.lastUsed = time.Now()
-		}
-		sshPoolMu.Unlock()
-	}
-
-	return session, release, nil
+	return session, func() { releasePooledClient(key, session, newClient) }, nil
 }
 
 type circuitState struct {
@@ -1632,15 +1612,18 @@ STAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_NAME="remnawave_backup_${STAMP}.tar.gz"
 TEMP_DIR=$(mktemp -d)
 
-# 1. Parse DB credentials and database name from .env if present
+# 1. Parse DB credentials and database name from .env if present (panel/ or root All-in-One)
 DB_USER="postgres"
 DB_NAME="postgres"
-if [ -f /opt/remnawave/panel/.env ]; then
-  u=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
-  [ -n "$u" ] && DB_USER="$u"
-  d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
-  [ -n "$d" ] && DB_NAME="$d"
-fi
+for env_f in /opt/remnawave/panel/.env /opt/remnawave/.env; do
+  if [ -f "$env_f" ]; then
+    u=$(grep -E '^(POSTGRES_USER|DB_USER)=' "$env_f" | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+    [ -n "$u" ] && DB_USER="$u"
+    d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' "$env_f" | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+    [ -n "$d" ] && DB_NAME="$d"
+    break
+  fi
+done
 
 # 2. Dump PostgreSQL in binary custom format (-F c -Z 9) with integrity check
 HAS_DUMP="no"
@@ -1668,8 +1651,10 @@ if docker ps --format '{{.Names}}' | grep -q 'remnawave-db'; then
   fi
 fi
 
-# 3. Copy all configs
+# 3. Copy all configs (both multi-dir classic and All-in-One Stealth443 root layout)
 mkdir -p "$TEMP_DIR/configs"
+[ -f /opt/remnawave/.env ] && cp -rf /opt/remnawave/.env "$TEMP_DIR/configs/root.env" || true
+[ -f /opt/remnawave/docker-compose.yml ] && cp -rf /opt/remnawave/docker-compose.yml "$TEMP_DIR/configs/root-compose.yml" || true
 [ -f /opt/remnawave/panel/.env ] && cp -rf /opt/remnawave/panel/.env "$TEMP_DIR/configs/panel.env" || true
 [ -f /opt/remnawave/panel/docker-compose.yml ] && cp -rf /opt/remnawave/panel/docker-compose.yml "$TEMP_DIR/configs/panel-compose.yml" || true
 [ -f /opt/remnawave/node/docker-compose.yml ] && cp -rf /opt/remnawave/node/docker-compose.yml "$TEMP_DIR/configs/node-compose.yml" || true
@@ -1678,6 +1663,8 @@ mkdir -p "$TEMP_DIR/configs"
 [ -f /opt/remnawave/nginx/privkey.key ] && cp -rf /opt/remnawave/nginx/privkey.key "$TEMP_DIR/configs/" || true
 [ -f /opt/remnawave/caddy/Caddyfile ] && cp -rf /opt/remnawave/caddy/Caddyfile "$TEMP_DIR/configs/Caddyfile" || true
 [ -f /opt/remnawave/caddy/docker-compose.yml ] && cp -rf /opt/remnawave/caddy/docker-compose.yml "$TEMP_DIR/configs/caddy-compose.yml" || true
+[ -f /opt/remnawave/selfsteal/Caddyfile ] && cp -rf /opt/remnawave/selfsteal/Caddyfile "$TEMP_DIR/configs/selfsteal.Caddyfile" || true
+[ -f /opt/remnawave/selfsteal/docker-compose.yml ] && cp -rf /opt/remnawave/selfsteal/docker-compose.yml "$TEMP_DIR/configs/selfsteal-compose.yml" || true
 
 # 4. Copy uploads directory if exists
 if [ -d /opt/remnawave/uploads ]; then
@@ -1974,139 +1961,100 @@ func ToggleAntiAbuse(server types.SavedServer, enable bool) types.CommandResult 
 	var cmd string
 
 	if enable {
-
 		cmd = `
+set -e
+ENV_FILE=""
+for f in /opt/remnawave/root.env /opt/remnawave/.env /opt/remnawave/panel/.env; do
+  if [ -f "$f" ]; then ENV_FILE="$f"; break; fi
+done
+DB_USER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' || echo "postgres")
+DB_NAME=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' || echo "postgres")
+[ -z "$DB_USER" ] && DB_USER="postgres"
+[ -z "$DB_NAME" ] && DB_NAME="postgres"
 
 # 1. Проверяем наличие ноды
-
-NODE_COUNT=$(docker exec -u postgres remnawave-db psql -U postgres -d postgres -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0")
-
+NODE_COUNT=$(docker exec -u postgres remnawave-db psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "SELECT count(*) FROM nodes;" 2>/dev/null || echo "0")
 HAS_CONTAINER=$(docker ps -a --format '{{.Names}}' | grep -q 'remnanode' && echo "yes" || echo "no")
 
-
-
 if [ "$NODE_COUNT" = "0" ] && [ "$HAS_CONTAINER" = "no" ]; then
-
   echo "ERR_NO_NODE: Xray нода не обнаружена. Сначала настройте и запустите Xray ноду перед включением защиты."
-
   exit 1
-
 fi
 
-
-
 # 2. Создаем/обновляем плагин в базе данных
-
-docker exec -u postgres remnawave-db psql -U postgres -d postgres -c "
-
+docker exec -u postgres remnawave-db psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "
 DO \$\$
-
 DECLARE
-
   p_uuid uuid := gen_random_uuid();
-
   cfg jsonb := '{\"torrentBlocker\":{\"enabled\":true,\"blockDuration\":3600,\"ignoreLists\":{\"ip\":[],\"userId\":[]}},\"egressFilter\":{\"enabled\":true,\"blockedPorts\":[25,465,587],\"blockedProtocols\":[\"smtp\",\"bittorrent\"],\"ignoreLists\":{\"ip\":[],\"userId\":[]}},\"ingressFilter\":{\"enabled\":false,\"blockedIps\":[]}}'::jsonb;
-
 BEGIN
-
   IF NOT EXISTS (SELECT 1 FROM node_plugin WHERE name='Anti-Abuse Shield') THEN
-
     INSERT INTO node_plugin (uuid, name, plugin_config, created_at, updated_at)
-
     VALUES (p_uuid, 'Anti-Abuse Shield', cfg, now(), now());
-
   ELSE
-
     SELECT uuid INTO p_uuid FROM node_plugin WHERE name='Anti-Abuse Shield' LIMIT 1;
-
     UPDATE node_plugin SET plugin_config=cfg, updated_at=now() WHERE uuid=p_uuid;
-
   END IF;
-
-
 
   UPDATE nodes SET active_plugin_uuid=p_uuid;
-
 END \$\$;
-
-" >/dev/null 2>&1
-
-
+"
 
 # 3. Блокируем исходящий спам (SMTP) на сетевом уровне хоста
-
 iptables -C OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null || iptables -A OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null || true
-
 iptables -C FORWARD -p tcp --dport 25 -j DROP 2>/dev/null || iptables -A FORWARD -p tcp --dport 25 -j DROP 2>/dev/null || true
 
-
-
 # 4. Перезапускаем ноду и панель для мгновенного вступления в силу
-
 docker restart remnanode >/dev/null 2>&1 || true
-
-docker compose -f /opt/remnawave/panel/docker-compose.yml restart remnawave >/dev/null 2>&1 || true
-
-
+if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+  docker compose -f /opt/remnawave/panel/docker-compose.yml restart remnawave >/dev/null 2>&1 || true
+elif [ -f /opt/remnawave/docker-compose.yml ]; then
+  docker compose -f /opt/remnawave/docker-compose.yml restart remnawave >/dev/null 2>&1 || true
+fi
 
 echo "Защита от торрентов и спама (Torrent Blocker & Egress Filter) успешно активирована!"
-
 `
-
 	} else {
-
 		cmd = `
+set -e
+ENV_FILE=""
+for f in /opt/remnawave/root.env /opt/remnawave/.env /opt/remnawave/panel/.env; do
+  if [ -f "$f" ]; then ENV_FILE="$f"; break; fi
+done
+DB_USER=$(grep -E '^POSTGRES_USER=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' || echo "postgres")
+DB_NAME=$(grep -E '^POSTGRES_DB=' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' || echo "postgres")
+[ -z "$DB_USER" ] && DB_USER="postgres"
+[ -z "$DB_NAME" ] && DB_NAME="postgres"
 
 # 1. Отключаем плагин в базе
-
-docker exec -u postgres remnawave-db psql -U postgres -d postgres -c "
-
+docker exec -u postgres remnawave-db psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "
 DO \$\$
-
 DECLARE
-
   p_uuid uuid;
-
   cfg jsonb := '{\"torrentBlocker\":{\"enabled\":false,\"blockDuration\":3600,\"ignoreLists\":{\"ip\":[],\"userId\":[]}},\"egressFilter\":{\"enabled\":false,\"blockedPorts\":[],\"blockedProtocols\":[],\"ignoreLists\":{\"ip\":[],\"userId\":[]}},\"ingressFilter\":{\"enabled\":false,\"blockedIps\":[]}}'::jsonb;
-
 BEGIN
-
   SELECT uuid INTO p_uuid FROM node_plugin WHERE name='Anti-Abuse Shield' LIMIT 1;
-
   IF p_uuid IS NOT NULL THEN
-
     UPDATE node_plugin SET plugin_config=cfg, updated_at=now() WHERE uuid=p_uuid;
-
   END IF;
-
   UPDATE nodes SET active_plugin_uuid=NULL WHERE active_plugin_uuid=p_uuid;
-
 END \$\$;
-
-" >/dev/null 2>&1
-
-
+"
 
 # 2. Снимаем сетевые блокировки
-
 iptables -D OUTPUT -p tcp --dport 25 -j DROP 2>/dev/null || true
-
 iptables -D FORWARD -p tcp --dport 25 -j DROP 2>/dev/null || true
 
-
-
-# 3. Перезапускаем ноду
-
+# 3. Перезапускаем ноду и панель
 docker restart remnanode >/dev/null 2>&1 || true
-
-docker compose -f /opt/remnawave/panel/docker-compose.yml restart remnawave >/dev/null 2>&1 || true
-
-
+if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+  docker compose -f /opt/remnawave/panel/docker-compose.yml restart remnawave >/dev/null 2>&1 || true
+elif [ -f /opt/remnawave/docker-compose.yml ]; then
+  docker compose -f /opt/remnawave/docker-compose.yml restart remnawave >/dev/null 2>&1 || true
+fi
 
 echo "Защита от торрентов и спама отключена."
-
 `
-
 	}
 
 
@@ -2197,22 +2145,28 @@ fi
 
 if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
   TARGET_DIR="/opt/remnawave/panel"
+  echo "==> Обновление конфигурации $TARGET_DIR/docker-compose.yml..."
+  cp -f "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak" 2>/dev/null || true
+  echo '%s' | base64 -d > "$TARGET_DIR/docker-compose.yml"
 elif [ -f /opt/remnawave/docker-compose.yml ]; then
   TARGET_DIR="/opt/remnawave"
+  if grep -qE 'remnanode:|remnawave-nginx:|remnawave-subscription-page:' "$TARGET_DIR/docker-compose.yml" 2>/dev/null; then
+    echo "==> Обнаружен единый All-in-One стек ($TARGET_DIR): сохраняем compose, применяем настройки .env и sysctl..."
+  else
+    echo "==> Обновление конфигурации $TARGET_DIR/docker-compose.yml..."
+    cp -f "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak" 2>/dev/null || true
+    echo '%s' | base64 -d > "$TARGET_DIR/docker-compose.yml"
+  fi
 else
   echo "ERR_NO_PANEL_COMPOSE: Каталог панели Remnawave не обнаружен на данном сервере."
   exit 1
 fi
 
-echo "==> Обновление конфигурации $TARGET_DIR/docker-compose.yml..."
-cp -f "$TARGET_DIR/docker-compose.yml" "$TARGET_DIR/docker-compose.yml.bak" 2>/dev/null || true
-echo '%s' | base64 -d > "$TARGET_DIR/docker-compose.yml"
-
 %s
 
-cd "$TARGET_DIR" && docker compose up -d --remove-orphans
+cd "$TARGET_DIR" && docker compose up -d
 echo "SUCCESS_APPLIED"
-`, sysctlScript, b64Compose, envUpdateScript)
+`, sysctlScript, b64Compose, b64Compose, envUpdateScript)
 
 	out, err := session.CombinedOutput(script)
 	resStr := strings.TrimSpace(string(out))
@@ -2341,6 +2295,11 @@ func RestoreBackup(server types.SavedServer, fileName string, scope string, crea
 	if scope == "" {
 		scope = "all"
 	}
+	switch scope {
+	case "all", "configs_only", "db_only":
+	default:
+		return types.RestoreBackupResult{Success: false, Error: fmt.Sprintf("Неизвестный режим восстановления scope=%q (допустимо: all, configs_only, db_only).", scope)}
+	}
 
 	safetyStr := "no"
 	if createSafetyBackup {
@@ -2372,6 +2331,8 @@ if [ "$DO_SAFETY" = "yes" ]; then
   SAFETY_DIR=$(mktemp -d)
   mkdir -p "$SAFETY_DIR/configs"
 
+  [ -f /opt/remnawave/.env ] && cp -rf /opt/remnawave/.env "$SAFETY_DIR/configs/root.env" || true
+  [ -f /opt/remnawave/docker-compose.yml ] && cp -rf /opt/remnawave/docker-compose.yml "$SAFETY_DIR/configs/root-compose.yml" || true
   [ -f /opt/remnawave/panel/.env ] && cp -rf /opt/remnawave/panel/.env "$SAFETY_DIR/configs/panel.env" || true
   [ -f /opt/remnawave/panel/docker-compose.yml ] && cp -rf /opt/remnawave/panel/docker-compose.yml "$SAFETY_DIR/configs/panel-compose.yml" || true
   [ -f /opt/remnawave/node/docker-compose.yml ] && cp -rf /opt/remnawave/node/docker-compose.yml "$SAFETY_DIR/configs/node-compose.yml" || true
@@ -2383,12 +2344,15 @@ if [ "$DO_SAFETY" = "yes" ]; then
   if docker ps --format '{{.Names}}' | grep -q 'remnawave-db'; then
     CURR_USER="postgres"
     CURR_DB="postgres"
-    if [ -f /opt/remnawave/panel/.env ]; then
-      u=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
-      [ -n "$u" ] && CURR_USER="$u"
-      d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
-      [ -n "$d" ] && CURR_DB="$d"
-    fi
+    for env_f in /opt/remnawave/panel/.env /opt/remnawave/.env; do
+      if [ -f "$env_f" ]; then
+        u=$(grep -E '^(POSTGRES_USER|DB_USER)=' "$env_f" | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+        [ -n "$u" ] && CURR_USER="$u"
+        d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' "$env_f" | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+        [ -n "$d" ] && CURR_DB="$d"
+        break
+      fi
+    done
     docker exec -i remnawave-db pg_dump -U "$CURR_USER" -d "$CURR_DB" --clean --if-exists --no-owner --no-privileges -F c -Z 9 > "$SAFETY_DIR/remnawave.dump" 2>/dev/null || true
   fi
 
@@ -2404,6 +2368,8 @@ tar -xzf "$RESTORE_FILE" -C "$TEMP_DIR"
 if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "configs_only" ]; then
   if [ -d "$TEMP_DIR/configs" ]; then
     mkdir -p /opt/remnawave/panel /opt/remnawave/node /opt/remnawave/nginx /opt/remnawave/caddy
+    [ -f "$TEMP_DIR/configs/root.env" ] && cp -f "$TEMP_DIR/configs/root.env" /opt/remnawave/.env || true
+    [ -f "$TEMP_DIR/configs/root-compose.yml" ] && cp -f "$TEMP_DIR/configs/root-compose.yml" /opt/remnawave/docker-compose.yml || true
     [ -f "$TEMP_DIR/configs/panel.env" ] && cp -f "$TEMP_DIR/configs/panel.env" /opt/remnawave/panel/.env || true
     [ -f "$TEMP_DIR/configs/panel-compose.yml" ] && cp -f "$TEMP_DIR/configs/panel-compose.yml" /opt/remnawave/panel/docker-compose.yml || true
     [ -f "$TEMP_DIR/configs/node-compose.yml" ] && cp -f "$TEMP_DIR/configs/node-compose.yml" /opt/remnawave/node/docker-compose.yml || true
@@ -2412,6 +2378,14 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "configs_only" ]; then
     [ -f "$TEMP_DIR/configs/privkey.key" ] && cp -f "$TEMP_DIR/configs/privkey.key" /opt/remnawave/nginx/privkey.key || true
     [ -f "$TEMP_DIR/configs/Caddyfile" ] && cp -f "$TEMP_DIR/configs/Caddyfile" /opt/remnawave/caddy/Caddyfile || true
     [ -f "$TEMP_DIR/configs/caddy-compose.yml" ] && cp -f "$TEMP_DIR/configs/caddy-compose.yml" /opt/remnawave/caddy/docker-compose.yml || true
+    if [ -f "$TEMP_DIR/configs/selfsteal.Caddyfile" ]; then
+      mkdir -p /opt/remnawave/selfsteal
+      cp -f "$TEMP_DIR/configs/selfsteal.Caddyfile" /opt/remnawave/selfsteal/Caddyfile || true
+    fi
+    if [ -f "$TEMP_DIR/configs/selfsteal-compose.yml" ]; then
+      mkdir -p /opt/remnawave/selfsteal
+      cp -f "$TEMP_DIR/configs/selfsteal-compose.yml" /opt/remnawave/selfsteal/docker-compose.yml || true
+    fi
   fi
 
   if [ -d "$TEMP_DIR/uploads" ]; then
@@ -2435,15 +2409,25 @@ if [ "$SCOPE" = "all" ] || [ "$SCOPE" = "db_only" ]; then
   if [ -n "$DUMP_FILE" ]; then
     TARGET_DB_USER="postgres"
     TARGET_DB_NAME="postgres"
-    if [ -f /opt/remnawave/panel/.env ]; then
-      u=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
-      [ -n "$u" ] && TARGET_DB_USER="$u"
-      d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/panel/.env | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
-      [ -n "$d" ] && TARGET_DB_NAME="$d"
+    for env_f in /opt/remnawave/panel/.env /opt/remnawave/.env; do
+      if [ -f "$env_f" ]; then
+        u=$(grep -E '^(POSTGRES_USER|DB_USER)=' "$env_f" | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+        [ -n "$u" ] && TARGET_DB_USER="$u"
+        d=$(grep -E '^(POSTGRES_DB|DB_NAME)=' "$env_f" | head -1 | cut -d'=' -f2- | tr -d '"\x27 ' || true)
+        [ -n "$d" ] && TARGET_DB_NAME="$d"
+        break
+      fi
+    done
+
+    COMPOSE_DIR=""
+    if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
+      COMPOSE_DIR="/opt/remnawave/panel"
+    elif [ -f /opt/remnawave/docker-compose.yml ]; then
+      COMPOSE_DIR="/opt/remnawave"
     fi
 
-    if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
-      cd /opt/remnawave/panel
+    if [ -n "$COMPOSE_DIR" ]; then
+      cd "$COMPOSE_DIR"
       docker compose down 2>/dev/null || true
       docker compose up -d remnawave-db
 
@@ -2478,6 +2462,9 @@ fi
 rm -rf "$TEMP_DIR"
 
 # 4. Restart services
+if [ -f /opt/remnawave/docker-compose.yml ]; then
+  cd /opt/remnawave && docker compose up -d 2>/dev/null || true
+fi
 if [ -f /opt/remnawave/panel/docker-compose.yml ]; then
   cd /opt/remnawave/panel && docker compose up -d 2>/dev/null || true
 fi
@@ -2487,15 +2474,24 @@ fi
 if [ -f /opt/remnawave/caddy/docker-compose.yml ]; then
   cd /opt/remnawave/caddy && docker compose restart 2>/dev/null || true
 fi
-docker restart remna-nginx remnawave-nginx remnawave-caddy 2>/dev/null || true
+docker restart remna-nginx remnawave-nginx remnawave-caddy remnawave-selfsteal 2>/dev/null || true
 
 echo "Резервная копия успешно восстановлена, службы перезапущены!"
 `, fileName, scope, safetyStr)
 
 	out, err := session.CombinedOutput(cmd)
 	outputStr := string(out)
-	if err != nil && len(outputStr) == 0 {
-		return types.RestoreBackupResult{Success: false, ScopeApplied: scope, Error: string(out)}
+	if err != nil || strings.Contains(outputStr, "ERR_") {
+		errMsg := strings.TrimSpace(outputStr)
+		if errMsg == "" && err != nil {
+			errMsg = err.Error()
+		}
+		return types.RestoreBackupResult{
+			Success:      false,
+			ScopeApplied: scope,
+			Output:       strings.TrimSpace(outputStr),
+			Error:        errMsg,
+		}
 	}
 
 	safetyFile := ""
@@ -2530,6 +2526,7 @@ func UpdateStackImages(server types.SavedServer) types.CommandResult {
 	defer session.Close()
 
 	cmd := `
+set -e
 which jq >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1 || true)
 UPDATED_COUNT=0
 
@@ -2537,10 +2534,10 @@ UPDATED_COUNT=0
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'remnawave-db'; then
   echo ">>> Создание страховочного снимка базы данных перед обновлением..."
   mkdir -p /opt/remnawave/backups 2>/dev/null || true
-  DB_USER=$(grep -E '^POSTGRES_USER=' /opt/remnawave/.env /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+  DB_USER=$(grep -E '^(POSTGRES_USER|DB_USER)=' /opt/remnawave/.env /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n ' | head -n1 || true)
   [ -z "$DB_USER" ] && DB_USER="postgres"
-  DB_NAME=$(grep -E '^POSTGRES_DB=' /opt/remnawave/.env /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
-  [ -z "$DB_NAME" ] && DB_NAME="remnawave"
+  DB_NAME=$(grep -E '^(POSTGRES_DB|DB_NAME)=' /opt/remnawave/.env /opt/remnawave/panel/.env 2>/dev/null | cut -d= -f2- | tr -d '"\r\n ' | head -n1 || true)
+  [ -z "$DB_NAME" ] && DB_NAME="postgres"
   docker exec -u postgres remnawave-db pg_dump -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-privileges -F c -Z 9 > /opt/remnawave/backups/pre_update_db.dump 2>/dev/null || true
   if [ -s /opt/remnawave/backups/pre_update_db.dump ]; then
     echo "Страховочный снимок БД сохранен: /opt/remnawave/backups/pre_update_db.dump"
@@ -2551,15 +2548,26 @@ fi
 if docker ps 2>/dev/null | grep -q remnawave; then
   echo ">>> Проверка и синхронизация токена страницы подписок..."
   API_BASE="http://127.0.0.1:3000"
+  CURL_RESOLVE=""
   STATUS=$(curl -s --connect-timeout 3 -m 5 "${API_BASE}/api/auth/status" 2>/dev/null || true)
-  if echo "$STATUS" | grep -q '"isConfigured"'; then
+  if ! echo "$STATUS" | grep -qE '"isConfigured"|"isLoginAllowed"|"isRegisterAllowed"'; then
+    DOMAIN_HOST=$(grep -E '^(PANEL_DOMAIN|FRONT_END_DOMAIN|APP_ORIGIN|SUB_PUBLIC_DOMAIN)=' /opt/remnawave/panel/.env /opt/remnawave/.env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"\r\n ' | sed -E 's|^https?://||; s|/.*||' || true)
+    if [ -n "$DOMAIN_HOST" ]; then
+      CURL_RESOLVE="--resolve ${DOMAIN_HOST}:443:127.0.0.1"
+      STATUS=$(curl -sk --connect-timeout 3 -m 5 ${CURL_RESOLVE} "https://${DOMAIN_HOST}/api/auth/status" 2>/dev/null || true)
+      if echo "$STATUS" | grep -qE '"isConfigured"|"isLoginAllowed"|"isRegisterAllowed"'; then
+        API_BASE="https://${DOMAIN_HOST}"
+      fi
+    fi
+  fi
+  if echo "$STATUS" | grep -qE '"isConfigured"|"isLoginAllowed"|"isRegisterAllowed"'; then
     ACCESS_TOKEN=""
 
     # 1. Сначала проверяем сохраненный мастер-токен /opt/remnawave/token (как в eGames)
     if [ -f /opt/remnawave/token ]; then
       SAVED_TOKEN=$(cat /opt/remnawave/token | tr -d '\r\n[:space:]')
       if [ -n "$SAVED_TOKEN" ]; then
-        TEST_RES=$(curl -s --connect-timeout 3 -m 5 -H "Authorization: Bearer ${SAVED_TOKEN}" "${API_BASE}/api/auth/profile" 2>/dev/null || true)
+        TEST_RES=$(curl -sk --connect-timeout 3 -m 5 ${CURL_RESOLVE} -H "Authorization: Bearer ${SAVED_TOKEN}" "${API_BASE}/api/auth/profile" 2>/dev/null || true)
         if echo "$TEST_RES" | grep -qE '"uuid"|"username"|"role"'; then
           ACCESS_TOKEN="$SAVED_TOKEN"
         fi
@@ -2572,22 +2580,29 @@ if docker ps 2>/dev/null | grep -q remnawave; then
       ADMIN_PASS=""
       for cred_file in /opt/remnawave/credentials.txt /opt/remnawave/.env /opt/remnawave/panel/.env; do
         if [ -f "$cred_file" ]; then
-          u=$(grep -E '^ADMIN_USERNAME=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+          u=$(grep -E '^ADMIN_USERNAME=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1 || true)
           if [ -n "$u" ] && [ -z "$ADMIN_USER" ]; then ADMIN_USER="$u"; fi
-          p=$(grep -E '^ADMIN_PASSWORD=|^INIT_ADMIN_PASSWORD=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1)
+          p=$(grep -E '^ADMIN_PASSWORD=|^INIT_ADMIN_PASSWORD=' "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '"\r\n' | head -n1 || true)
           if [ -n "$p" ] && [ -z "$ADMIN_PASS" ]; then ADMIN_PASS="$p"; fi
         fi
       done
       [ -z "$ADMIN_USER" ] && ADMIN_USER="admin"
 
       if [ -n "$ADMIN_PASS" ]; then
-        LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
+        if command -v jq >/dev/null 2>&1; then
+          LOGIN_BODY=$(jq -n --arg u "$ADMIN_USER" --arg p "$ADMIN_PASS" '{username:$u,password:$p}')
+        else
+          ESC_U=$(printf '%s' "$ADMIN_USER" | sed 's/\\/\\\\/g; s/"/\\"/g')
+          ESC_P=$(printf '%s' "$ADMIN_PASS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+          LOGIN_BODY="{\"username\":\"${ESC_U}\",\"password\":\"${ESC_P}\"}"
+        fi
+        LOGIN_RES=$(curl -sk ${CURL_RESOLVE} -X POST "${API_BASE}/api/auth/login" \
           -H "Content-Type: application/json" \
           -H "X-Remnawave-Client-Type: browser" \
           -H "X-Forwarded-For: 127.0.0.1" \
           -H "X-Forwarded-Proto: https" \
-          -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}")
-        ACCESS_TOKEN=$(echo "$LOGIN_RES" | grep -o '"accessToken":"[^"]*' | cut -d'"' -f4)
+          -d "$LOGIN_BODY")
+        ACCESS_TOKEN=$(echo "$LOGIN_RES" | grep -o '"accessToken":"[^"]*' | cut -d'"' -f4 || true)
       fi
     fi
 
@@ -2597,14 +2612,14 @@ if docker ps 2>/dev/null | grep -q remnawave; then
       chmod 600 /opt/remnawave/token 2>/dev/null || true
 
       SUB_PAYLOAD='{"name":"subscription-page","expiresInDays":3650,"scopes":["subscription-page-configs:list","subscription-page-configs:get","subscriptions:subpage-config","system:metadata","users:by-username"]}'
-      SUB_TOKEN_RES=$(curl -s -X POST "${API_BASE}/api/tokens" \
+      SUB_TOKEN_RES=$(curl -sk ${CURL_RESOLVE} -X POST "${API_BASE}/api/tokens" \
         -H "Authorization: Bearer ${ACCESS_TOKEN}" \
         -H "Content-Type: application/json" \
         -H "X-Remnawave-Client-Type: browser" \
         -H "X-Forwarded-For: 127.0.0.1" \
         -H "X-Forwarded-Proto: https" \
         -d "${SUB_PAYLOAD}")
-      NEW_SUB_TOKEN=$(echo "$SUB_TOKEN_RES" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+      NEW_SUB_TOKEN=$(echo "$SUB_TOKEN_RES" | grep -o '"token":"[^"]*' | cut -d'"' -f4 || true)
 
       if [ -n "$NEW_SUB_TOKEN" ]; then
         for f in /opt/remnawave/.env /opt/remnawave/docker-compose.yml /opt/remnawave/panel/.env /opt/remnawave/subscription/.env /opt/remnawave/subscription/docker-compose.yml; do
@@ -2746,12 +2761,13 @@ if [ -z "$ACCESS_TOKEN" ]; then
   [ -z "$ADMIN_USER" ] && ADMIN_USER="admin"
 
   if [ -n "$ADMIN_PASS" ]; then
+    LOGIN_PAYLOAD=$(jq -nc --arg u "$ADMIN_USER" --arg p "$ADMIN_PASS" '{username:$u,password:$p}' 2>/dev/null || python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "$ADMIN_USER" "$ADMIN_PASS" 2>/dev/null)
     LOGIN_RES=$(curl -sk ${CURL_RESOLVE} -X POST "${API_BASE}/api/auth/login" \
       -H "Content-Type: application/json" \
       -H "X-Remnawave-Client-Type: browser" \
       -H "X-Forwarded-For: 127.0.0.1" \
       -H "X-Forwarded-Proto: https" \
-      -d "{\"username\":\"${ADMIN_USER}\",\"password\":\"${ADMIN_PASS}\"}")
+      -d "$LOGIN_PAYLOAD")
     ACCESS_TOKEN=$(echo "$LOGIN_RES" | grep -o '"accessToken":"[^"]*' | cut -d'"' -f4)
   fi
 fi

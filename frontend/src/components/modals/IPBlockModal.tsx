@@ -426,6 +426,7 @@ export const IPBlockModal: React.FC<IPBlockModalProps> = ({
               type="button"
               className="win-button"
               style={{ background: "var(--win-accent)", color: "#ffffff", borderColor: "var(--win-accent)" }}
+              disabled={loading}
               onClick={close}
             >
               Закрыть

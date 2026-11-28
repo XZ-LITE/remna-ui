@@ -3,11 +3,13 @@ package ssh
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -305,6 +307,9 @@ func DeployRemotely(
 	emitLog("success", "SSH-соединение успешно установлено!")
 
 	runRemoteCmd := func(title, command string) error {
+		if ctx != nil && ctx.Err() != nil {
+			return ctx.Err()
+		}
 		emitLog("step", title)
 		session, err := client.NewSession()
 		if err != nil {
@@ -320,15 +325,48 @@ func DeployRemotely(
 			return err
 		}
 
-		go streamReader(stdout, func(line string) { emitLog("stdout", line) })
-		go streamReader(stderr, func(line string) {
-			status := classifyStderrLine(line)
-			emitLog(status, line)
-		})
+		parentCtx := ctx
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		cmdCtx, cancelCmd := context.WithTimeout(parentCtx, 15*time.Minute)
+		defer cancelCmd()
 
-		if err := session.Wait(); err != nil {
-			emitLog("error", fmt.Sprintf("Команда завершилась с ошибкой: %v", err))
-			return err
+		watchDone := make(chan struct{})
+		go func() {
+			select {
+			case <-cmdCtx.Done():
+				_ = session.Signal(ssh.SIGKILL)
+				_ = session.Close()
+			case <-watchDone:
+			}
+		}()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			streamReader(stdout, func(line string) { emitLog("stdout", line) })
+		}()
+		go func() {
+			defer wg.Done()
+			streamReader(stderr, func(line string) {
+				status := classifyStderrLine(line)
+				emitLog(status, line)
+			})
+		}()
+
+		waitErr := session.Wait()
+		close(watchDone)
+		wg.Wait()
+
+		if cmdCtx.Err() != nil {
+			emitLog("error", fmt.Sprintf("Команда прервана или превышен таймаут: %v", cmdCtx.Err()))
+			return cmdCtx.Err()
+		}
+		if waitErr != nil {
+			emitLog("error", fmt.Sprintf("Команда завершилась с ошибкой: %v", waitErr))
+			return waitErr
 		}
 		return nil
 	}
@@ -496,15 +534,23 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 			)
 			compose = generator.RenderPanelComposeStandard()
 		}
-		_ = runRemoteCmd("Запись panel/.env", fmt.Sprintf("mkdir -p %s/panel && cat > %s/panel/.env <<'EOF'\n%s\nEOF", targetDir, targetDir, env))
-		_ = runRemoteCmd("Запись panel/docker-compose.yml", fmt.Sprintf("cat > %s/panel/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, compose))
+		if err := runRemoteCmd("Запись panel/.env", fmt.Sprintf("mkdir -p %s/panel && cat > %s/panel/.env <<'EOF'\n%s\nEOF", targetDir, targetDir, env)); err != nil {
+			return nil, err
+		}
+		if err := runRemoteCmd("Запись panel/docker-compose.yml", fmt.Sprintf("cat > %s/panel/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, compose)); err != nil {
+			return nil, err
+		}
 	}
 
 	if hasSub {
 		env := generator.RenderSubscriptionEnv(plan.PanelDomain, "", plan.SubscriptionMode)
-		_ = runRemoteCmd("Запись subscription/.env", fmt.Sprintf("mkdir -p %s/subscription && cat > %s/subscription/.env <<'EOF'\n%s\nEOF", targetDir, targetDir, env))
+		if err := runRemoteCmd("Запись subscription/.env", fmt.Sprintf("mkdir -p %s/subscription && cat > %s/subscription/.env <<'EOF'\n%s\nEOF", targetDir, targetDir, env)); err != nil {
+			return nil, err
+		}
 		compose := generator.RenderSubscriptionCompose(plan.SubscriptionMode)
-		_ = runRemoteCmd("Запись subscription/docker-compose.yml", fmt.Sprintf("cat > %s/subscription/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, compose))
+		if err := runRemoteCmd("Запись subscription/docker-compose.yml", fmt.Sprintf("cat > %s/subscription/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, compose)); err != nil {
+			return nil, err
+		}
 	}
 
 	if hasProxy {
@@ -531,15 +577,19 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 			_ = runRemoteCmd("Генерация первичного SSL сертификата", sslInitCmd)
 
 			conf := generator.RenderNginxConf(panelDomain, plan.SubscriptionDomain, bundledSub, plan.SecretGate, plan.UseCamouflage)
-			_ = runRemoteCmd("Запись nginx/nginx.conf", fmt.Sprintf("cat > %s/nginx/nginx.conf <<'EOF'\n%s\nEOF", targetDir, conf))
-			_ = runRemoteCmd("Запись nginx/docker-compose.yml", fmt.Sprintf("cat > %s/nginx/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, generator.RenderNginxCompose()))
+			if err := runRemoteCmd("Запись nginx/nginx.conf", fmt.Sprintf("cat > %s/nginx/nginx.conf <<'EOF'\n%s\nEOF", targetDir, conf)); err != nil {
+				return nil, err
+			}
+			if err := runRemoteCmd("Запись nginx/docker-compose.yml", fmt.Sprintf("cat > %s/nginx/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, generator.RenderNginxCompose())); err != nil {
+				return nil, err
+			}
 			if plan.UseCamouflage {
 				siteDir := fmt.Sprintf("%s/nginx/site", targetDir)
 				_ = runRemoteCmd("Подготовка и клонирование сайта маскировки (Nginx)", buildDecoySiteScript(siteDir, plan.DecoyTemplate, plan.DecoyCloneURL))
 			}
 
 			if plan.UseCloudflareDns && strings.TrimSpace(plan.CloudflareApiToken) != "" {
-				cfToken := strings.TrimSpace(plan.CloudflareApiToken)
+				cfTokenB64 := base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(plan.CloudflareApiToken)))
 				rootDomain := panelDomain
 				parts := strings.Split(panelDomain, ".")
 				if len(parts) >= 2 {
@@ -549,7 +599,7 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 					`if [ ! -x ~/.acme.sh/acme.sh ]; then `+
 					`curl -fsSL https://get.acme.sh | sh -s email=admin@%s >/dev/null 2>&1 || true; `+
 					`fi; `+
-					`export CF_Token="%s"; `+
+					`export CF_Token=$(printf '%%s' '%s' | base64 -d); `+
 					`~/.acme.sh/acme.sh --upgrade --auto-upgrade >/dev/null 2>&1 || true; `+
 					`~/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1 || true; `+
 					`~/.acme.sh/acme.sh --issue --dns dns_cf -d %s -d "*.%s" --force >/dev/null 2>&1; `+
@@ -558,7 +608,7 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 					`echo "Сертификат Let's Encrypt Wildcard успешно получен через Cloudflare DNS-01!"; `+
 					`else `+
 					`echo "Не удалось выпустить сертификат через Cloudflare DNS-01 (проверьте права токена), используется самоподписанный SSL."; fi`,
-					rootDomain, cfToken, rootDomain, rootDomain, rootDomain, rootDomain, targetDir, targetDir)
+					rootDomain, cfTokenB64, rootDomain, rootDomain, rootDomain, rootDomain, targetDir, targetDir)
 				_ = runRemoteCmd("Получение Wildcard SSL через Cloudflare DNS-01", cfDnsCmd)
 			} else {
 				// Free port 80 before certbot runs
@@ -600,8 +650,12 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 				siteDir := fmt.Sprintf("%s/caddy/site", targetDir)
 				_ = runRemoteCmd("Подготовка и клонирование сайта маскировки (Caddy)", buildDecoySiteScript(siteDir, plan.DecoyTemplate, plan.DecoyCloneURL))
 			}
-			_ = runRemoteCmd("Запись caddy/Caddyfile", fmt.Sprintf("cat > %s/caddy/Caddyfile <<'EOF'\n%s\nEOF", targetDir, caddyfile))
-			_ = runRemoteCmd("Запись caddy/docker-compose.yml", fmt.Sprintf("cat > %s/caddy/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, generator.RenderCaddyCompose()))
+			if err := runRemoteCmd("Запись caddy/Caddyfile", fmt.Sprintf("cat > %s/caddy/Caddyfile <<'EOF'\n%s\nEOF", targetDir, caddyfile)); err != nil {
+				return nil, err
+			}
+			if err := runRemoteCmd("Запись caddy/docker-compose.yml", fmt.Sprintf("cat > %s/caddy/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, generator.RenderCaddyCompose())); err != nil {
+				return nil, err
+			}
 			emitLog("success", "Конфигурация Caddy подготовлена (сертификаты Let's Encrypt будут выпущены автоматически при первом запросе).")
 		}
 	}
@@ -611,7 +665,9 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 		if nodePort == 0 {
 			nodePort = 2222
 		}
-		_ = runRemoteCmd("Запись node/docker-compose.yml", fmt.Sprintf("mkdir -p %s/node && cat > %s/node/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, targetDir, generator.RenderNodeCompose(nodePort, plan.NodeSecret)))
+		if err := runRemoteCmd("Запись node/docker-compose.yml", fmt.Sprintf("mkdir -p %s/node && cat > %s/node/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, targetDir, generator.RenderNodeCompose(nodePort, plan.NodeSecret))); err != nil {
+			return nil, err
+		}
 	}
 
 	// Start services
@@ -619,14 +675,16 @@ sysctl --system >/dev/null 2>&1 || sysctl -p /etc/sysctl.d/99-remna-bbr.conf >/d
 		_ = runRemoteCmd("Остановка предыдущих контейнеров Panel (если были)", fmt.Sprintf("cd %s/panel && docker compose down 2>/dev/null || true", targetDir))
 
 		// Pre-pull images with retry logic against Docker Hub 502/network timeouts
-		pullCmd := fmt.Sprintf(`for attempt in 1 2 3; do `+
+		pullCmd := fmt.Sprintf(`PULL_OK=0; for attempt in 1 2 3; do `+
 			`echo "Загрузка Docker образов (попытка $attempt из 3)..."; `+
 			`if cd %s/panel && docker compose pull; then `+
-			`echo "Все образы успешно загружены!"; break; fi; `+
+			`echo "Все образы успешно загружены!"; PULL_OK=1; break; fi; `+
 			`echo "Временный сбой сети Docker Hub. Повтор через 4 секунды..."; `+
 			`sleep 4; `+
-			`done`, targetDir)
-		_ = runRemoteCmd("Загрузка Docker образов (с защитой от сбоев сети)", pullCmd)
+			`done; [ "$PULL_OK" -eq 1 ]`, targetDir)
+		if err := runRemoteCmd("Загрузка Docker образов (с защитой от сбоев сети)", pullCmd); err != nil {
+			return nil, err
+		}
 
 		if err := runRemoteCmd("Запуск Panel стека", fmt.Sprintf("cd %s/panel && docker compose up -d", targetDir)); err != nil {
 			_ = runRemoteCmd("Диагностика ошибок remnawave-db", fmt.Sprintf("cd %s/panel && docker compose logs --tail=40 remnawave-db || true", targetDir))
@@ -757,9 +815,13 @@ IS_CONFIGURED=$(curl -s "${API_BASE}/api/auth/status" \
 TOKEN=""
 if [ -z "$IS_CONFIGURED" ]; then
   echo "Регистрация администратора Remnawave в API..."
-  cat > /tmp/rw_reg.json << JSON_REG_EOF
-{"username":"${ADMIN_USER}","password":"${ADMIN_PASS}"}
-JSON_REG_EOF
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg u "${ADMIN_USER}" --arg p "${ADMIN_PASS}" '{username:$u,password:$p}' > /tmp/rw_reg.json
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "${ADMIN_USER}" "${ADMIN_PASS}" > /tmp/rw_reg.json
+  else
+    printf '{"username":"%%s","password":"%%s"}\n' "${ADMIN_USER}" "${ADMIN_PASS}" > /tmp/rw_reg.json
+  fi
   REG_RES=$(curl -s -X POST "${API_BASE}/api/auth/register" \
     -H "Content-Type: application/json" \
     -H "X-Forwarded-For: 127.0.0.1" \
@@ -772,9 +834,13 @@ fi
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
   echo "Попытка авторизации администратора Remnawave..."
-  cat > /tmp/rw_login.json << JSON_LOGIN_EOF
-{"username":"${ADMIN_USER}","password":"${ADMIN_PASS}"}
-JSON_LOGIN_EOF
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg u "${ADMIN_USER}" --arg p "${ADMIN_PASS}" '{username:$u,password:$p}' > /tmp/rw_login.json
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "${ADMIN_USER}" "${ADMIN_PASS}" > /tmp/rw_login.json
+  else
+    printf '{"username":"%%s","password":"%%s"}\n' "${ADMIN_USER}" "${ADMIN_PASS}" > /tmp/rw_login.json
+  fi
   LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
     -H "Content-Type: application/json" \
     -H "X-Forwarded-For: 127.0.0.1" \
@@ -803,10 +869,6 @@ else
   echo "Завершите регистрацию учетной записи суперадминистратора вручную через веб-интерфейс панели."
   rm -f "${TARGET_DIR}/token" "${TARGET_DIR}/panel/token"
 fi
-ADMIN_USERNAME=${ADMIN_USER}
-ADMIN_PASSWORD=${ADMIN_PASS}
-CRED_EOF
-chmod 600 "${TARGET_DIR}/credentials.txt" 2>/dev/null || true
 
 if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
   MASTER_PAYLOAD='{"name":"remna-ui-manager","expiresInDays":3650,"scopes":["*"]}'
@@ -843,14 +905,18 @@ if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
   fi
 fi
 `, targetDir, classicAdminUser, classicAdminPass, hasSub)
-			_ = runRemoteCmd("Регистрация администратора и выпуск токенов API", adminSetupScript)
+			if err := runRemoteCmd("Регистрация администратора и выпуск токенов API", adminSetupScript); err != nil {
+				return nil, err
+			}
 		} else {
 			emitLog("info", "Режим регистрации: самостоятельный в веб-интерфейсе. Создайте первого пользователя при первом входе.")
 		}
 	}
 
 	if hasSub {
-		_ = runRemoteCmd("Запуск страницы подписок", fmt.Sprintf("cd %s/subscription && docker compose up -d", targetDir))
+		if err := runRemoteCmd("Запуск страницы подписок", fmt.Sprintf("cd %s/subscription && docker compose up -d", targetDir)); err != nil {
+			return nil, err
+		}
 	}
 	if hasProxy {
 		proxyDir := "nginx"
@@ -883,7 +949,9 @@ fi
 				return ""
 			}()), openPortsCmd)
 			_ = runRemoteCmd("Остановка предыдущей ноды (если была)", fmt.Sprintf("cd %s/node && docker compose down 2>/dev/null || true", targetDir))
-			_ = runRemoteCmd("Загрузка образов и запуск сервера ноды", fmt.Sprintf("cd %s/node && docker compose pull && docker compose up -d", targetDir))
+			if err := runRemoteCmd("Загрузка образов и запуск сервера ноды", fmt.Sprintf("cd %s/node && docker compose pull && docker compose up -d", targetDir)); err != nil {
+				return nil, err
+			}
 		} else {
 			emitLog("info", "Конфигурация ноды подготовлена (/opt/remnawave/node/docker-compose.yml).")
 			emitLog("info", "Для запуска ноды войдите в панель управления, перейдите в Nodes -> Management, скопируйте SECRET_KEY и привяжите ноду.")
@@ -1232,7 +1300,36 @@ func deployStealthAllInOne(
 		domainsArg += fmt.Sprintf(" -d %s", decoyDomain)
 	}
 
-	sslPrepCmd := fmt.Sprintf(`
+	if plan.UseCloudflareDns && strings.TrimSpace(plan.CloudflareApiToken) != "" {
+		cfTokenB64 := base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(plan.CloudflareApiToken)))
+		rootDomain := panelDomain
+		parts := strings.Split(panelDomain, ".")
+		if len(parts) >= 2 {
+			rootDomain = strings.Join(parts[len(parts)-2:], ".")
+		}
+		cfPrepCmd := fmt.Sprintf(`
+mkdir -p %s/ssl
+docker stop remnawave-nginx remnanode 2>/dev/null || true
+systemctl stop nginx apache2 caddy 2>/dev/null || true
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout %s/ssl/privkey.key -out %s/ssl/fullchain.pem -subj '/CN=%s' 2>/dev/null || true
+which curl >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1 || true)
+if [ ! -x ~/.acme.sh/acme.sh ]; then
+  curl -fsSL https://get.acme.sh | sh -s email=admin@%s >/dev/null 2>&1 || true
+fi
+export CF_Token=$(printf '%%s' '%s' | base64 -d)
+~/.acme.sh/acme.sh --upgrade --auto-upgrade >/dev/null 2>&1 || true
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
+~/.acme.sh/acme.sh --issue --dns dns_cf -d %s -d "*.%s" --force >/dev/null 2>&1
+if [ -f ~/.acme.sh/%s/fullchain.cer ]; then
+  ~/.acme.sh/acme.sh --install-cert -d %s --key-file %s/ssl/privkey.key --fullchain-file %s/ssl/fullchain.pem >/dev/null 2>&1
+  echo "Сертификат Let's Encrypt Wildcard успешно получен через Cloudflare DNS-01!"
+else
+  echo "Не удалось выпустить сертификат через Cloudflare DNS-01 (проверьте права токена), используется самоподписанный SSL."
+fi
+`, targetDir, targetDir, targetDir, panelDomain, rootDomain, cfTokenB64, rootDomain, rootDomain, rootDomain, rootDomain, targetDir, targetDir)
+		_ = runRemoteCmd("Получение Wildcard SSL через Cloudflare DNS-01 (Stealth 443)", cfPrepCmd)
+	} else {
+		sslPrepCmd := fmt.Sprintf(`
 mkdir -p %s/ssl
 docker stop remnawave-nginx remnanode 2>/dev/null || true
 systemctl stop nginx apache2 caddy 2>/dev/null || true
@@ -1256,7 +1353,8 @@ if [ -f /etc/letsencrypt/live/%s/fullchain.pem ]; then
   echo "Сертификат Let's Encrypt успешно получен и скопирован!"
 fi
 `, targetDir, targetDir, targetDir, panelDomain, domainsArg, panelDomain, panelDomain, panelDomain, targetDir, panelDomain, targetDir)
-	_ = runRemoteCmd("Настройка SSL сертификатов", sslPrepCmd)
+		_ = runRemoteCmd("Настройка SSL сертификатов", sslPrepCmd)
+	}
 
 	// 3. Jolymmiles Custom Xray Core (if requested)
 	if plan.XrayCoreType == "jolymmiles" {
@@ -1345,18 +1443,26 @@ fi
 		metricsPass,
 		"",
 	)
-	_ = runRemoteCmd("Запись .env", fmt.Sprintf("cat > %s/.env <<'EOF'\n%s\nEOF", targetDir, envContent))
+	if err := runRemoteCmd("Запись .env", fmt.Sprintf("cat > %s/.env <<'EOF'\n%s\nEOF", targetDir, envContent)); err != nil {
+		return nil, err
+	}
 
 	nginxConf := generator.RenderStealthNginxConf(panelDomain, subDomain, decoyDomain, plan.SecretGate, plan.UseCamouflage)
-	_ = runRemoteCmd("Запись nginx.conf (Stealth Fallback)", fmt.Sprintf("cat > %s/nginx.conf <<'EOF'\n%s\nEOF", targetDir, nginxConf))
+	if err := runRemoteCmd("Запись nginx.conf (Stealth Fallback)", fmt.Sprintf("cat > %s/nginx.conf <<'EOF'\n%s\nEOF", targetDir, nginxConf)); err != nil {
+		return nil, err
+	}
 
 	composeContent := generator.RenderAllInOneStealthCompose(appSecret, dbPass, metricsPass, tempApiToken, tempSecretKey, plan.XrayCoreType)
-	_ = runRemoteCmd("Запись docker-compose.yml", fmt.Sprintf("cat > %s/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, composeContent))
+	if err := runRemoteCmd("Запись docker-compose.yml", fmt.Sprintf("cat > %s/docker-compose.yml <<'EOF'\n%s\nEOF", targetDir, composeContent)); err != nil {
+		return nil, err
+	}
 
 	// 5. Pull & Up Stack
 	emitLog("step", "Загрузка Docker-образов и запуск единого стека...")
 	_ = runRemoteCmd("Остановка предыдущих контейнеров", fmt.Sprintf("cd %s && docker compose down 2>/dev/null || true", targetDir))
-	_ = runRemoteCmd("Загрузка образов", fmt.Sprintf("cd %s && docker compose pull", targetDir))
+	if err := runRemoteCmd("Загрузка образов", fmt.Sprintf("cd %s && docker compose pull", targetDir)); err != nil {
+		return nil, err
+	}
 	if err := runRemoteCmd("Запуск единого стека Remnawave", fmt.Sprintf("cd %s && docker compose up -d", targetDir)); err != nil {
 		return nil, err
 	}
@@ -1430,9 +1536,13 @@ if [ "${ADMIN_MODE}" = "manual" ]; then
 else
   if [ -z "$IS_CONFIGURED" ]; then
     echo "Регистрация администратора Remnawave в API..."
-    cat > /tmp/rw_reg.json << JSON_REG_EOF
-{"username":"${SUPERADMIN_USER}","password":"${SUPERADMIN_PASS}"}
-JSON_REG_EOF
+    if command -v jq >/dev/null 2>&1; then
+      jq -nc --arg u "${SUPERADMIN_USER}" --arg p "${SUPERADMIN_PASS}" '{username:$u,password:$p}' > /tmp/rw_reg.json
+    elif command -v python3 >/dev/null 2>&1; then
+      python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "${SUPERADMIN_USER}" "${SUPERADMIN_PASS}" > /tmp/rw_reg.json
+    else
+      printf '{"username":"%%s","password":"%%s"}\n' "${SUPERADMIN_USER}" "${SUPERADMIN_PASS}" > /tmp/rw_reg.json
+    fi
     REG_RES=$(curl -s -X POST "${API_BASE}/api/auth/register" \
       -H "Content-Type: application/json" \
       -H "X-Forwarded-For: 127.0.0.1" \
@@ -1445,9 +1555,13 @@ JSON_REG_EOF
 
   if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
     echo "Попытка авторизации администратора Remnawave..."
-    cat > /tmp/rw_login.json << JSON_LOGIN_EOF
-{"username":"${SUPERADMIN_USER}","password":"${SUPERADMIN_PASS}"}
-JSON_LOGIN_EOF
+    if command -v jq >/dev/null 2>&1; then
+      jq -nc --arg u "${SUPERADMIN_USER}" --arg p "${SUPERADMIN_PASS}" '{username:$u,password:$p}' > /tmp/rw_login.json
+    elif command -v python3 >/dev/null 2>&1; then
+      python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "${SUPERADMIN_USER}" "${SUPERADMIN_PASS}" > /tmp/rw_login.json
+    else
+      printf '{"username":"%%s","password":"%%s"}\n' "${SUPERADMIN_USER}" "${SUPERADMIN_PASS}" > /tmp/rw_login.json
+    fi
     LOGIN_RES=$(curl -s -X POST "${API_BASE}/api/auth/login" \
       -H "Content-Type: application/json" \
       -H "X-Forwarded-For: 127.0.0.1" \
@@ -1570,13 +1684,22 @@ if [ -n "$CONFIG_UUID" ] && [ "$CONFIG_UUID" != "null" ]; then
 
   NODE_PAYLOAD=$(jq -n     --arg name "Master Node (Stealth 443)"     --arg address "127.0.0.1"     --arg cfgUuid "${CONFIG_UUID}"     --arg inUuid "${INBOUND_UUID}"     '{
       name: $name,
+      country: "DE",
+      countryCode: "DE",
       address: $address,
       port: 2222,
-      configProfileUuid: $cfgUuid,
-      inboundUuid: $inUuid,
+      trafficMultiplier: 1,
+      configProfile: {
+        activeConfigProfileUuid: $cfgUuid,
+        activeInbounds: [$inUuid]
+      },
       isTrafficTrackingActive: true
     }')
-  curl -s -X POST "${API_BASE}/api/nodes"     -H "Authorization: Bearer ${TOKEN}"     -H "Content-Type: application/json"     -d "${NODE_PAYLOAD}" >/dev/null 2>&1 || true
+  NODE_RES=$(curl -s -w "\n%%{http_code}" -X POST "${API_BASE}/api/nodes"     -H "Authorization: Bearer ${TOKEN}"     -H "Content-Type: application/json"     -d "${NODE_PAYLOAD}")
+  NODE_CODE=$(echo "$NODE_RES" | tail -n1)
+  if [ "$NODE_CODE" -lt 200 ] || [ "$NODE_CODE" -ge 300 ]; then
+    echo "Предупреждение: POST /api/nodes вернул HTTP ${NODE_CODE}: $(echo "$NODE_RES" | sed '$d')"
+  fi
 
   HOST_PAYLOAD=$(jq -n     --arg cfgUuid "${CONFIG_UUID}"     --arg inUuid "${INBOUND_UUID}"     --arg addr "${DECOY_DOMAIN}"     '{
       inbound: { configProfileUuid: $cfgUuid, configProfileInboundUuid: $inUuid },
@@ -1591,20 +1714,26 @@ if [ -n "$CONFIG_UUID" ] && [ "$CONFIG_UUID" != "null" ]; then
       allowInsecure: false,
       isDisabled: false
     }')
-  curl -s -X POST "${API_BASE}/api/hosts"     -H "Authorization: Bearer ${TOKEN}"     -H "Content-Type: application/json"     -d "${HOST_PAYLOAD}" >/dev/null 2>&1 || true
+  HOST_RES=$(curl -s -w "\n%%{http_code}" -X POST "${API_BASE}/api/hosts"     -H "Authorization: Bearer ${TOKEN}"     -H "Content-Type: application/json"     -d "${HOST_PAYLOAD}")
+  HOST_CODE=$(echo "$HOST_RES" | tail -n1)
+  if [ "$HOST_CODE" -lt 200 ] || [ "$HOST_CODE" -ge 300 ]; then
+    echo "Предупреждение: POST /api/hosts вернул HTTP ${HOST_CODE}: $(echo "$HOST_RES" | sed '$d')"
+  fi
 
   SQUADS=$(curl -s "${API_BASE}/api/internal-squads" -H "Authorization: Bearer ${TOKEN}")
   SQUAD_UUID=$(echo "$SQUADS" | jq -r '(.response.internalSquads[0].uuid // .response[0].uuid // empty)')
   if [ -n "$SQUAD_UUID" ] && [ "$SQUAD_UUID" != "null" ] && [ -n "$INBOUND_UUID" ]; then
     SQUAD_PAYLOAD=$(jq -n --arg sqUuid "${SQUAD_UUID}" --arg inUuid "${INBOUND_UUID}" '{uuid: $sqUuid, inbounds: [$inUuid]}')
-    curl -s -X PATCH "${API_BASE}/api/internal-squads" \
+    SQ_CODE=$(curl -s -o /dev/null -w "%%{http_code}" -X PATCH "${API_BASE}/api/internal-squads" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H "Content-Type: application/json" \
-      -d "${SQUAD_PAYLOAD}" >/dev/null 2>&1 || \
-    curl -s -X PATCH "${API_BASE}/api/internal-squads/${SQUAD_UUID}" \
-      -H "Authorization: Bearer ${TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "{\"inbounds\":[\"${INBOUND_UUID}\"]}" >/dev/null 2>&1 || true
+      -d "${SQUAD_PAYLOAD}")
+    if [ "$SQ_CODE" -lt 200 ] || [ "$SQ_CODE" -ge 300 ]; then
+      curl -s -o /dev/null -w "%%{http_code}" -X PATCH "${API_BASE}/api/internal-squads/${SQUAD_UUID}" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"inbounds\":[\"${INBOUND_UUID}\"]}" >/dev/null 2>&1 || true
+    fi
     echo "Нода и сквад успешно сконфигурированы!"
   fi
 fi
@@ -1625,7 +1754,7 @@ if [ -n "$SUB_API_TOKEN" ] && [ "$SUB_API_TOKEN" != "null" ]; then
 fi
 
 echo "Перезапуск сервисов с финальными ключами безопасности..."
-cd "${TARGET_DIR}" && docker compose down >/dev/null 2>&1 && docker compose up -d >/dev/null 2>&1 || true
+cd "${TARGET_DIR}" && docker compose down && docker compose up -d
 echo "Стек успешно запущен в режиме единого порта 443!"
 `,
 		adminMode,
@@ -1636,7 +1765,9 @@ echo "Стек успешно запущен в режиме единого по
 		plan.TorrentBlocker,
 		plan.BlockSpamPorts,
 	)
-	_ = runRemoteCmd("Выполнение Autopilot", autopilotScript)
+	if err := runRemoteCmd("Выполнение Autopilot", autopilotScript); err != nil {
+		return nil, err
+	}
 
 	// 7. Configure UFW port isolation (Stealth Mode)
 	sshPort := plan.SshPort

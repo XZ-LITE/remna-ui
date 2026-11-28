@@ -24,10 +24,12 @@ type VaultConfigFile struct {
 
 type Manager struct {
 	mu           sync.RWMutex
+	rekeyMu      sync.Mutex
 	osKeyMu      sync.Mutex
 	osKey        []byte
 	storeDir     string
 	config       VaultConfigFile
+	configErr    string
 	activeKey    []byte
 	isUnlocked   bool
 	lastActivity time.Time
@@ -89,27 +91,48 @@ func (m *Manager) loadConfig() {
 
 	data, err := os.ReadFile(m.configPath())
 	if err != nil {
+		if os.IsNotExist(err) {
+			m.config = VaultConfigFile{
+				Enabled:         false,
+				AutoLockMinutes: 15,
+			}
+			m.isUnlocked = true
+			m.configErr = ""
+			return
+		}
 		m.config = VaultConfigFile{
-			Enabled:         false,
+			Enabled:         true,
 			AutoLockMinutes: 15,
 		}
-		m.isUnlocked = true
+		m.isUnlocked = false
+		m.configErr = fmt.Sprintf("ошибка чтения конфигурации хранилища: %v", err)
 		return
 	}
 
 	var cfg VaultConfigFile
-	if err := json.Unmarshal(data, &cfg); err == nil && cfg.Enabled {
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		m.config = VaultConfigFile{
+			Enabled:         true,
+			AutoLockMinutes: 15,
+		}
+		m.isUnlocked = false
+		m.configErr = "файл vault_config.json поврежден; восстановление/перезапись секретов заблокированы во избежание потери данных"
+		return
+	}
+	if cfg.Enabled {
 		if cfg.AutoLockMinutes <= 0 {
 			cfg.AutoLockMinutes = 15
 		}
 		m.config = cfg
 		m.isUnlocked = false
+		m.configErr = ""
 	} else {
 		m.config = VaultConfigFile{
 			Enabled:         false,
 			AutoLockMinutes: 15,
 		}
 		m.isUnlocked = true
+		m.configErr = ""
 	}
 }
 
@@ -169,6 +192,7 @@ func (m *Manager) GetStatus() types.VaultStatus {
 		ProtectionBackend: backend,
 		AutoLockMinutes:   m.config.AutoLockMinutes,
 		HasSavedServers:   hasServers,
+		Message:           m.configErr,
 	}
 }
 
@@ -227,19 +251,35 @@ func (m *Manager) SetMasterPassword(oldPass, newPass string, reencryptFn func(de
 		return errors.New("мастер-пароль должен содержать не менее 8 символов")
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Serialize rekeying separately from m.mu so reencryptFn can safely acquire external store locks
+	// without AB-BA lock-order inversion against EncryptSecret/DecryptSecret/GetStatus.
+	m.rekeyMu.Lock()
+	defer m.rekeyMu.Unlock()
 
+	m.mu.Lock()
+	if m.configErr != "" {
+		m.mu.Unlock()
+		return errors.New(m.configErr)
+	}
 	if m.config.Enabled {
 		salt, _ := hex.DecodeString(m.config.SaltHex)
 		storedVerifier, _ := hex.DecodeString(m.config.VerifierHex)
 		oldKey := crypto.DeriveKey(oldPass, salt)
 		if !crypto.VerifyKey(oldKey, salt, storedVerifier) {
 			crypto.Memclr(oldKey)
+			m.mu.Unlock()
 			return errors.New("текущий мастер-пароль указан неверно")
 		}
 		crypto.Memclr(oldKey)
 	}
+
+	var oldKeyCopy []byte
+	if len(m.activeKey) > 0 {
+		oldKeyCopy = make([]byte, len(m.activeKey))
+		copy(oldKeyCopy, m.activeKey)
+	}
+	m.mu.Unlock()
+	defer crypto.Memclr(oldKeyCopy)
 
 	newSalt, err := crypto.GenerateSalt()
 	if err != nil {
@@ -249,23 +289,19 @@ func (m *Manager) SetMasterPassword(oldPass, newPass string, reencryptFn func(de
 	newKey := crypto.DeriveKey(cleanNew, newSalt)
 	verifier := crypto.ComputeVerifier(newKey, newSalt)
 
-	oldActiveKey := m.activeKey
-	oldConfig := m.config
-	wasUnlocked := m.isUnlocked
-
 	decryptOld := func(raw string) (string, error) {
 		if strings.HasPrefix(raw, "enc:vault:") {
-			if len(oldActiveKey) == 0 {
+			if len(oldKeyCopy) == 0 {
 				return "", errors.New("хранилище заблокировано, расшифровка невозможна")
 			}
-			data, err := crypto.DecryptAESGCM(strings.TrimPrefix(raw, "enc:vault:"), oldActiveKey)
+			data, err := crypto.DecryptAESGCM(strings.TrimPrefix(raw, "enc:vault:"), oldKeyCopy)
 			if err != nil {
 				return "", err
 			}
 			return string(data), nil
 		}
 		if strings.HasPrefix(raw, prefixDPAPI) || strings.HasPrefix(raw, prefixOS) || strings.HasPrefix(raw, prefixLocal) {
-			return m.decryptOSSecret(raw), nil
+			return m.decryptOSSecret(raw)
 		}
 		return raw, nil
 	}
@@ -288,13 +324,16 @@ func (m *Manager) SetMasterPassword(oldPass, newPass string, reencryptFn func(de
 		}
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	oldActiveKey := m.activeKey
+	oldConfig := m.config
+	wasUnlocked := m.isUnlocked
+
 	if err := m.reencryptSecureValuesLocked(decryptOld, encryptNew); err != nil {
 		crypto.Memclr(newKey)
 		return fmt.Errorf("ошибка перешифрования системных токенов: %w", err)
-	}
-
-	if len(oldActiveKey) > 0 {
-		crypto.Memclr(oldActiveKey)
 	}
 
 	m.config = VaultConfigFile{
@@ -315,6 +354,10 @@ func (m *Manager) SetMasterPassword(oldPass, newPass string, reencryptFn func(de
 		return fmt.Errorf("ошибка сохранения конфигурации хранилища: %w", err)
 	}
 
+	if len(oldActiveKey) > 0 {
+		crypto.Memclr(oldActiveKey)
+	}
+	m.configErr = ""
 	m.activeKey = newKey
 	m.isUnlocked = true
 	m.lastActivity = time.Now()
@@ -323,10 +366,16 @@ func (m *Manager) SetMasterPassword(oldPass, newPass string, reencryptFn func(de
 }
 
 func (m *Manager) DisableMasterPassword(currentPass string, reencryptFn func(decryptOld func(string) (string, error), encryptNew func(string) (string, error)) error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.rekeyMu.Lock()
+	defer m.rekeyMu.Unlock()
 
+	m.mu.Lock()
+	if m.configErr != "" {
+		m.mu.Unlock()
+		return errors.New(m.configErr)
+	}
 	if !m.config.Enabled {
+		m.mu.Unlock()
 		return nil
 	}
 
@@ -335,8 +384,11 @@ func (m *Manager) DisableMasterPassword(currentPass string, reencryptFn func(dec
 	curKey := crypto.DeriveKey(currentPass, salt)
 	if !crypto.VerifyKey(curKey, salt, storedVerifier) {
 		crypto.Memclr(curKey)
+		m.mu.Unlock()
 		return errors.New("неверный мастер-пароль")
 	}
+	m.mu.Unlock()
+	defer crypto.Memclr(curKey)
 
 	decryptOld := func(raw string) (string, error) {
 		if strings.HasPrefix(raw, "enc:vault:") {
@@ -347,7 +399,7 @@ func (m *Manager) DisableMasterPassword(currentPass string, reencryptFn func(dec
 			return string(data), nil
 		}
 		if strings.HasPrefix(raw, prefixDPAPI) || strings.HasPrefix(raw, prefixOS) || strings.HasPrefix(raw, prefixLocal) {
-			return m.decryptOSSecret(raw), nil
+			return m.decryptOSSecret(raw)
 		}
 		return raw, nil
 	}
@@ -356,28 +408,29 @@ func (m *Manager) DisableMasterPassword(currentPass string, reencryptFn func(dec
 		if plain == "" {
 			return "", nil
 		}
-		return m.encryptOSSecret(plain), nil
+		return m.encryptOSSecret(plain)
 	}
 
 	if reencryptFn != nil {
 		if err := reencryptFn(decryptOld, encryptNew); err != nil {
-			crypto.Memclr(curKey)
-			return fmt.Errorf("ошибка перешифрования серверов в DPAPI: %w", err)
+			return fmt.Errorf("ошибка перешифрования серверов в OS-защиту: %w", err)
 		}
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if err := m.reencryptSecureValuesLocked(decryptOld, encryptNew); err != nil {
-		crypto.Memclr(curKey)
 		return fmt.Errorf("ошибка перешифрования токенов: %w", err)
 	}
 
-	crypto.Memclr(curKey)
 	if len(m.activeKey) > 0 {
 		crypto.Memclr(m.activeKey)
 		m.activeKey = nil
 	}
 
 	_ = os.Remove(m.configPath())
+	m.configErr = ""
 	m.config = VaultConfigFile{
 		Enabled:         false,
 		AutoLockMinutes: 15,
@@ -421,7 +474,7 @@ func (m *Manager) EncryptSecret(secret string) (string, error) {
 		return "enc:vault:" + enc, nil
 	}
 
-	return m.encryptOSSecret(secret), nil
+	return m.encryptOSSecret(secret)
 }
 
 func (m *Manager) DecryptSecret(encrypted string) (string, error) {
@@ -446,7 +499,7 @@ func (m *Manager) DecryptSecret(encrypted string) (string, error) {
 	}
 
 	if strings.HasPrefix(encrypted, prefixDPAPI) || strings.HasPrefix(encrypted, prefixOS) || strings.HasPrefix(encrypted, prefixLocal) {
-		return m.decryptOSSecret(encrypted), nil
+		return m.decryptOSSecret(encrypted)
 	}
 
 	return encrypted, nil

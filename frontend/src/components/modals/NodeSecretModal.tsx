@@ -50,7 +50,9 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
       isOpen={true}
       onClose={onClose}
       maxWidth="620px"
+      maxHeight="88vh"
       dialogClassName="node-modal-dialog"
+      dialogStyle={{ display: "flex", flexDirection: "column", overflow: "hidden" }}
       preventBackdropClose={loading}
     >
       {({ close }) => (
@@ -90,6 +92,7 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
               <button
                 className="win-button"
                 style={{ padding: "0 8px", height: "26px" }}
+                disabled={loading}
                 onClick={() => !loading && close()}
               >
                 <X size={14} />
@@ -99,21 +102,25 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
         </div>
 
         {/* Body */}
-        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-          {/* Segmented Mode Selector (Native Windows 11 Dark Fluent Style) */}
+        <div
+          className="win-modal-body"
+          style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}
+        >
+          {/* Segmented Mode Selector (Theme-Aware Fluent Style) */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              background: "rgba(0, 0, 0, 0.28)",
+              background: "var(--win-fill-card-secondary)",
               padding: "3px",
               borderRadius: "7px",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              border: "1px solid var(--win-stroke-card)",
               gap: "3px",
             }}
           >
             <button
               type="button"
+              disabled={loading}
               style={{
                 flex: 1,
                 display: "flex",
@@ -123,12 +130,12 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
                 height: "28px",
                 fontSize: "12px",
                 fontWeight: guideMode === "api" ? 600 : 400,
-                color: guideMode === "api" ? "#ffffff" : "var(--win-text-secondary)",
-                background: guideMode === "api" ? "rgba(255, 255, 255, 0.10)" : "transparent",
+                color: guideMode === "api" ? "var(--win-text-primary)" : "var(--win-text-secondary)",
+                background: guideMode === "api" ? "var(--win-control-bg)" : "transparent",
                 borderRadius: "5px",
-                border: guideMode === "api" ? "1px solid rgba(255, 255, 255, 0.14)" : "1px solid transparent",
-                boxShadow: guideMode === "api" ? "0 1px 4px rgba(0, 0, 0, 0.3)" : "none",
-                cursor: "pointer",
+                border: guideMode === "api" ? "1px solid var(--win-card-stroke-hover)" : "1px solid transparent",
+                boxShadow: guideMode === "api" ? "0 1px 4px rgba(0, 0, 0, 0.12)" : "none",
+                cursor: loading ? "not-allowed" : "pointer",
                 transition: "all 0.15s ease",
               }}
               onClick={() => setGuideMode("api")}
@@ -138,6 +145,7 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
             </button>
             <button
               type="button"
+              disabled={loading}
               style={{
                 flex: 1,
                 display: "flex",
@@ -147,12 +155,12 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
                 height: "28px",
                 fontSize: "12px",
                 fontWeight: guideMode === "manual" ? 600 : 400,
-                color: guideMode === "manual" ? "#ffffff" : "var(--win-text-secondary)",
-                background: guideMode === "manual" ? "rgba(255, 255, 255, 0.10)" : "transparent",
+                color: guideMode === "manual" ? "var(--win-text-primary)" : "var(--win-text-secondary)",
+                background: guideMode === "manual" ? "var(--win-control-bg)" : "transparent",
                 borderRadius: "5px",
-                border: guideMode === "manual" ? "1px solid rgba(255, 255, 255, 0.14)" : "1px solid transparent",
-                boxShadow: guideMode === "manual" ? "0 1px 4px rgba(0, 0, 0, 0.3)" : "none",
-                cursor: "pointer",
+                border: guideMode === "manual" ? "1px solid var(--win-card-stroke-hover)" : "1px solid transparent",
+                boxShadow: guideMode === "manual" ? "0 1px 4px rgba(0, 0, 0, 0.12)" : "none",
+                cursor: loading ? "not-allowed" : "pointer",
                 transition: "all 0.15s ease",
               }}
               onClick={() => setGuideMode("manual")}
@@ -311,6 +319,7 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
                 <button
                   type="button"
                   className="table-action-btn"
+                  disabled={loading}
                   onClick={handlePaste}
                   title="Вставить из буфера обмена"
                 >
@@ -346,7 +355,7 @@ export const NodeSecretModal: React.FC<NodeSecretModalProps> = ({
           style={{
             flexShrink: 0,
             padding: "14px 22px",
-            background: "rgba(0, 0, 0, 0.22)",
+            background: "var(--win-card-row-hover)",
             borderTop: "1px solid var(--win-card-stroke)",
             display: "flex",
             alignItems: "center",
