@@ -22,6 +22,8 @@ export const WinActionMenu: React.FC<WinActionMenuProps> = ({
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const isRenderedRef = useRef(isOpen);
+  const isClosingRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -59,19 +61,25 @@ export const WinActionMenu: React.FC<WinActionMenuProps> = ({
         window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
+      isClosingRef.current = false;
       setIsClosing(false);
-      setIsPositioned(false);
-      setIsRendered(true);
-    } else if (isRendered && !isClosing) {
+      if (!isRenderedRef.current) {
+        isRenderedRef.current = true;
+        setIsRendered(true);
+      }
+    } else if (isRenderedRef.current && !isClosingRef.current) {
+      isClosingRef.current = true;
       setIsClosing(true);
       closeTimerRef.current = window.setTimeout(() => {
         closeTimerRef.current = null;
+        isClosingRef.current = false;
+        isRenderedRef.current = false;
         setIsRendered(false);
         setIsClosing(false);
         setIsPositioned(false);
       }, 115);
     }
-  }, [isOpen, isRendered, isClosing]);
+  }, [isOpen]);
 
   useLayoutEffect(() => {
     if (isRendered && !isClosing) {
