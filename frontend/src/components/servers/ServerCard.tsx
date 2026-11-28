@@ -527,16 +527,18 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                         <span>Проверить доступность из РФ</span>
                                       </button>
 
-                                      <button
-                                        className="server-menu-item"
-                                        onClick={() => {
-                                          setActiveServerMenu(null);
-                                          handleOpenVPNProbeModal(srv);
-                                        }}
-                                      >
-                                        <Activity size={14} style={{ color: "#c084fc" }} />
-                                        <span>Тест VPN-трафика (E2E)</span>
-                                      </button>
+                                      {(!isMaster || isNodeAvailable) && (
+                                        <button
+                                          className="server-menu-item"
+                                          onClick={() => {
+                                            setActiveServerMenu(null);
+                                            handleOpenVPNProbeModal(srv);
+                                          }}
+                                        >
+                                          <Activity size={14} style={{ color: "#c084fc" }} />
+                                          <span>Тест VPN-трафика (E2E)</span>
+                                        </button>
+                                      )}
 
                                       <button
                                         className="server-menu-item"
