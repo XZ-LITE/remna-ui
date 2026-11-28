@@ -17,7 +17,7 @@ export const WinActionMenu: React.FC<WinActionMenuProps> = ({
   const [isRendered, setIsRendered] = useState(isOpen);
   const [isClosing, setIsClosing] = useState(false);
   const [placement, setPlacement] = useState<"bottom" | "top">("bottom");
-  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: -9999, left: -9999 });
+  const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const [isPositioned, setIsPositioned] = useState(false);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -107,33 +107,42 @@ export const WinActionMenu: React.FC<WinActionMenuProps> = ({
       if (menuRef.current && target instanceof Node && menuRef.current.contains(target)) {
         return;
       }
-      if (
-        target instanceof Node &&
-        target !== document &&
-        target !== document.documentElement &&
-        anchorRef.current &&
-        !target.contains(anchorRef.current)
-      ) {
+      const anchorEl = anchorRef.current;
+      if (!anchorEl) {
+        onCloseRef.current();
         return;
       }
-      onCloseRef.current();
+      const rect = anchorEl.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        onCloseRef.current();
+        return;
+      }
+      updatePosition();
     };
 
     const handleResize = () => {
-      onCloseRef.current();
+      updatePosition();
     };
 
-    document.addEventListener("mousedown", handleMouseDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("scroll", handleScroll, true);
-    window.addEventListener("resize", handleResize);
+    let attached = false;
+    const attachTimer = window.setTimeout(() => {
+      attached = true;
+      document.addEventListener("mousedown", handleMouseDown, true);
+      document.addEventListener("keydown", handleKeyDown);
+      window.addEventListener("scroll", handleScroll, true);
+      window.addEventListener("resize", handleResize);
+    }, 0);
+
     return () => {
-      document.removeEventListener("mousedown", handleMouseDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("scroll", handleScroll, true);
-      window.removeEventListener("resize", handleResize);
+      window.clearTimeout(attachTimer);
+      if (attached) {
+        document.removeEventListener("mousedown", handleMouseDown, true);
+        document.removeEventListener("keydown", handleKeyDown);
+        window.removeEventListener("scroll", handleScroll, true);
+        window.removeEventListener("resize", handleResize);
+      }
     };
-  }, [isRendered, isClosing, anchorRef]);
+  }, [isRendered, isClosing, anchorRef, updatePosition]);
 
   useEffect(() => {
     return () => {

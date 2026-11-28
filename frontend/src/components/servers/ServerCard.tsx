@@ -381,7 +381,11 @@ export const ServerCard: React.FC<ServerCardProps> = memo(({
                                   <WinTooltip content="Дополнительные действия...">
                                     <button
                                       ref={moreMenuAnchorRef}
+                                      type="button"
                                       className={`win-button toolbar-action-btn icon-only ${isMenuOpen ? "active" : ""}`}
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                      }}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setActiveServerMenu(isMenuOpen ? null : srv.id);
